@@ -3718,6 +3718,61 @@ static ssize_t razer_attr_write_logo_led_state(struct device *dev, struct device
 }
 
 /**
+ * Read device file "logo_led_brightness"
+ *
+ * Returns the lid logo brightness as an integer from 0 to 255.
+ */
+static ssize_t razer_attr_read_logo_led_brightness(struct device *dev, struct device_attribute *attr, char *buf)
+{
+    struct razer_kbd_device *device = dev_get_drvdata(dev);
+    struct razer_report request = {0};
+    struct razer_report response = {0};
+    int err;
+
+    if (device->usb_pid != USB_DEVICE_ID_RAZER_BLADE_PRO_EARLY_2020)
+        return -EINVAL;
+
+    request = razer_chroma_standard_get_led_brightness(VARSTORE, LOGO_LED);
+    request.transaction_id.id = 0xFF;
+
+    err = razer_send_payload(device, &request, &response);
+    if (err)
+        return err;
+
+    return sysfs_emit(buf, "%u\n", response.arguments[2]);
+}
+
+/**
+ * Write device file "logo_led_brightness"
+ *
+ * Sets the lid logo brightness to an integer from 0 to 255.
+ */
+static ssize_t razer_attr_write_logo_led_brightness(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+    struct razer_kbd_device *device = dev_get_drvdata(dev);
+    struct razer_report request = {0};
+    struct razer_report response = {0};
+    unsigned char brightness;
+    int err;
+
+    if (device->usb_pid != USB_DEVICE_ID_RAZER_BLADE_PRO_EARLY_2020)
+        return -EINVAL;
+
+    err = kstrtou8(buf, 0, &brightness);
+    if (err)
+        return err;
+
+    request = razer_chroma_standard_set_led_brightness(VARSTORE, LOGO_LED, brightness);
+    request.transaction_id.id = 0xFF;
+
+    err = razer_send_payload(device, &request, &response);
+    if (err)
+        return err;
+
+    return count;
+}
+
+/**
  * Write device file "matrix_effect_custom"
  *
  * Sets the keyboard to custom mode whenever the file is written to
@@ -4743,6 +4798,7 @@ static DEVICE_ATTR(game_led_state,          0660, razer_attr_read_game_led_state
 static DEVICE_ATTR(macro_led_state,         0660, razer_attr_read_macro_led_state,            razer_attr_write_macro_led_state);
 static DEVICE_ATTR(macro_led_effect,        0660, razer_attr_read_macro_led_effect,           razer_attr_write_macro_led_effect);
 static DEVICE_ATTR(logo_led_state,          0660, razer_attr_read_logo_led_state,             razer_attr_write_logo_led_state);
+static DEVICE_ATTR(logo_led_brightness,     0660, razer_attr_read_logo_led_brightness,        razer_attr_write_logo_led_brightness);
 static DEVICE_ATTR(profile_led_red,         0660, razer_attr_read_profile_led_red,            razer_attr_write_profile_led_red);
 static DEVICE_ATTR(profile_led_green,       0660, razer_attr_read_profile_led_green,          razer_attr_write_profile_led_green);
 static DEVICE_ATTR(profile_led_blue,        0660, razer_attr_read_profile_led_blue,           razer_attr_write_profile_led_blue);
@@ -5754,6 +5810,7 @@ static int razer_kbd_probe(struct hid_device *hdev, const struct hid_device_id *
             CREATE_DEVICE_FILE(&hdev->dev, &dev_attr_matrix_effect_custom);          // Custom effect
             CREATE_DEVICE_FILE(&hdev->dev, &dev_attr_matrix_custom_frame);           // Set LED matrix
             CREATE_DEVICE_FILE(&hdev->dev, &dev_attr_logo_led_state);                // Enable/Disable the logo
+            CREATE_DEVICE_FILE(&hdev->dev, &dev_attr_logo_led_brightness);           // Gets and sets logo brightness
             break;
 
         case USB_DEVICE_ID_RAZER_BLACKWIDOW_CHROMA:
@@ -6302,6 +6359,7 @@ static void razer_kbd_disconnect(struct hid_device *hdev)
             device_remove_file(&hdev->dev, &dev_attr_matrix_effect_custom);          // Custom effect
             device_remove_file(&hdev->dev, &dev_attr_matrix_custom_frame);           // Set LED matrix
             device_remove_file(&hdev->dev, &dev_attr_logo_led_state);                // Enable/Disable the logo
+            device_remove_file(&hdev->dev, &dev_attr_logo_led_brightness);           // Gets and sets logo brightness
             break;
 
         case USB_DEVICE_ID_RAZER_BLACKWIDOW_CHROMA:
