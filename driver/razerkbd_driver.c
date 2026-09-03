@@ -315,6 +315,16 @@ static bool is_blade_laptop(struct razer_kbd_device *device)
     return false;
 }
 
+static int razer_kbd_pm_get(struct razer_kbd_device *device)
+{
+    return hid_hw_power(device->hdev, PM_HINT_FULLON);
+}
+
+static void razer_kbd_pm_put(struct razer_kbd_device *device)
+{
+    hid_hw_power(device->hdev, PM_HINT_NORMAL);
+}
+
 /**
  * Get request/response indices and timing parameters for the device
  */
@@ -414,17 +424,24 @@ static int __must_check razer_send_payload_no_response(struct razer_kbd_device *
 
     razer_get_report_params(usb_dev, &report_index, &response_index, &wait);
 
+    err = razer_kbd_pm_get(device);
+    if (err)
+        return err;
+
     mutex_lock(&device->lock);
     err = razer_send_control_msg(device->hdev, request, sizeof(*request), report_index, wait);
     mutex_unlock(&device->lock);
+    razer_kbd_pm_put(device);
 
     return err;
 }
 
 /**
  * Function to send to device, get response, and actually check the response
+ * Caller must keep the device powered after hid_hw_start().
  */
-static int __must_check razer_send_payload(struct razer_kbd_device *device, struct razer_report *request, struct razer_report *response)
+static int __must_check razer_send_payload_core(struct razer_kbd_device *device,
+        struct razer_report *request, struct razer_report *response)
 {
     int retry;
     int err;
@@ -482,6 +499,21 @@ retry:
         WARN_ONCE(1, "Unknown response status received: %d\n", response->status);
         return -EIO;
     }
+}
+
+static int __must_check razer_send_payload(struct razer_kbd_device *device,
+        struct razer_report *request, struct razer_report *response)
+{
+    int err;
+
+    err = razer_kbd_pm_get(device);
+    if (err)
+        return err;
+
+    err = razer_send_payload_core(device, request, response);
+    razer_kbd_pm_put(device);
+
+    return err;
 }
 
 /**
@@ -657,7 +689,8 @@ static int razer_set_device_mode(struct razer_kbd_device *device, unsigned char 
         return -EINVAL;
     }
 
-    return razer_send_payload(device, &request, &response);
+    /* Probe calls this before hid_hw_start(). */
+    return razer_send_payload_core(device, &request, &response);
 }
 
 /**
