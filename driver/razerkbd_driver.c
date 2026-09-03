@@ -5949,7 +5949,6 @@ static int razer_kbd_probe(struct hid_device *hdev, const struct hid_device_id *
             CREATE_DEVICE_FILE(&hdev->dev, &dev_attr_matrix_custom_frame);           // Set LED matrix
             CREATE_DEVICE_FILE(&hdev->dev, &dev_attr_fn_toggle);                     // Sets whether FN is requires for F-Keys
             dev->has_logo_state = true;
-            CREATE_DEVICE_FILE(&hdev->dev, &dev_attr_logo_led_state);                // Enable/Disable the logo
             break;
 
         case USB_DEVICE_ID_RAZER_BLADE_PRO_LATE_2016:
@@ -5988,7 +5987,6 @@ static int razer_kbd_probe(struct hid_device *hdev, const struct hid_device_id *
             CREATE_DEVICE_FILE(&hdev->dev, &dev_attr_matrix_effect_custom);          // Custom effect
             CREATE_DEVICE_FILE(&hdev->dev, &dev_attr_matrix_custom_frame);           // Set LED matrix
             dev->has_logo_state = true;
-            CREATE_DEVICE_FILE(&hdev->dev, &dev_attr_logo_led_state);                // Enable/Disable the logo
             break;
 
         case USB_DEVICE_ID_RAZER_BLADE_PRO_EARLY_2020:
@@ -6001,8 +5999,6 @@ static int razer_kbd_probe(struct hid_device *hdev, const struct hid_device_id *
             CREATE_DEVICE_FILE(&hdev->dev, &dev_attr_matrix_custom_frame);           // Set LED matrix
             dev->has_logo_state = true;
             dev->has_logo_brightness = true;
-            CREATE_DEVICE_FILE(&hdev->dev, &dev_attr_logo_led_state);                // Enable/Disable the logo
-            CREATE_DEVICE_FILE(&hdev->dev, &dev_attr_logo_led_brightness);           // Gets and sets logo brightness
             break;
 
         case USB_DEVICE_ID_RAZER_BLACKWIDOW_CHROMA:
@@ -6044,6 +6040,11 @@ static int razer_kbd_probe(struct hid_device *hdev, const struct hid_device_id *
             CREATE_DEVICE_FILE(&hdev->dev, &dev_attr_macro_led_effect);              // Change macro LED effect (static, flashing)
             break;
         }
+
+        if (dev->has_logo_state)
+            CREATE_DEVICE_FILE(&hdev->dev, &dev_attr_logo_led_state);                // Enable/Disable the logo
+        if (dev->has_logo_brightness)
+            CREATE_DEVICE_FILE(&hdev->dev, &dev_attr_logo_led_brightness);           // Gets and sets logo brightness
 
         // Set device to regular mode, not driver mode
         // When the daemon discovers the device it will instruct it to enter driver mode
@@ -6110,6 +6111,11 @@ static void razer_kbd_disconnect(struct hid_device *hdev)
         device_remove_file(&hdev->dev, &dev_attr_device_type);                           // Get string of device type
         device_remove_file(&hdev->dev, &dev_attr_device_mode);                           // Get device mode
         device_remove_file(&hdev->dev, &dev_attr_kbd_layout);                            // Gets the physical layout
+
+        if (dev->has_logo_state)
+            device_remove_file(&hdev->dev, &dev_attr_logo_led_state);                // Enable/Disable the logo
+        if (dev->has_logo_brightness)
+            device_remove_file(&hdev->dev, &dev_attr_logo_led_brightness);           // Gets and sets logo brightness
 
         switch(usb_dev->descriptor.idProduct) {
 
@@ -6503,7 +6509,6 @@ static void razer_kbd_disconnect(struct hid_device *hdev)
             device_remove_file(&hdev->dev, &dev_attr_matrix_effect_custom);          // Custom effect
             device_remove_file(&hdev->dev, &dev_attr_matrix_custom_frame);           // Set LED matrix
             device_remove_file(&hdev->dev, &dev_attr_fn_toggle);                     // Sets whether FN is requires for F-Keys
-            device_remove_file(&hdev->dev, &dev_attr_logo_led_state);                // Enable/Disable the logo
             break;
 
         case USB_DEVICE_ID_RAZER_BLADE_PRO_LATE_2016:
@@ -6541,7 +6546,6 @@ static void razer_kbd_disconnect(struct hid_device *hdev)
             device_remove_file(&hdev->dev, &dev_attr_matrix_effect_static);          // Static effect
             device_remove_file(&hdev->dev, &dev_attr_matrix_effect_custom);          // Custom effect
             device_remove_file(&hdev->dev, &dev_attr_matrix_custom_frame);           // Set LED matrix
-            device_remove_file(&hdev->dev, &dev_attr_logo_led_state);                // Enable/Disable the logo
             break;
 
         case USB_DEVICE_ID_RAZER_BLADE_PRO_EARLY_2020:
@@ -6552,8 +6556,6 @@ static void razer_kbd_disconnect(struct hid_device *hdev)
             device_remove_file(&hdev->dev, &dev_attr_matrix_effect_static);          // Static effect
             device_remove_file(&hdev->dev, &dev_attr_matrix_effect_custom);          // Custom effect
             device_remove_file(&hdev->dev, &dev_attr_matrix_custom_frame);           // Set LED matrix
-            device_remove_file(&hdev->dev, &dev_attr_logo_led_state);                // Enable/Disable the logo
-            device_remove_file(&hdev->dev, &dev_attr_logo_led_brightness);           // Gets and sets logo brightness
             break;
 
         case USB_DEVICE_ID_RAZER_BLACKWIDOW_CHROMA:

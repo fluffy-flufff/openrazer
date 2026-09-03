@@ -141,8 +141,9 @@ byte_dpi_devices=(
 )
 
 
-get_attr_from_create_device_file() {
-    sed -n 's/[[:space:]]\+CREATE_DEVICE_FILE(&hdev->dev, &dev_attr_\([[:lower:][:digit:]_]\+\));.*/\1/p'
+get_device_attrs() {
+    sed -n -e 's/[[:space:]]\+CREATE_DEVICE_FILE(&hdev->dev, &dev_attr_\([[:lower:][:digit:]_]\+\));.*/\1/p' \
+        -e 's/[[:space:]]\+dev->has_logo_\([[:lower:]_]\+\) = true;.*/logo_led_\1/p'
 }
 
 driver=$1
@@ -160,12 +161,12 @@ devices=$(git grep -h "#define USB_DEVICE_ID_RAZER_" driver/${driver}_driver.h |
 probe_func=$(sed -n '/^static int razer_'${driver_short}'_probe/,/^}$/p' driver/${driver}_driver.c)
 devicetype_func=$(sed -n '/^static ssize_t razer_attr_read_device_type/,/^}$/p' driver/${driver}_driver.c)
 
-probe_lines=$(echo "$probe_func" | grep 'case \|CREATE_DEVICE_FILE\|break;')
+probe_lines=$(echo "$probe_func" | grep 'case \|CREATE_DEVICE_FILE\|has_logo_\|break;')
 devicetype_lines=$(echo "$devicetype_func" | grep 'case \|device_type = \|break;')
 
 # https://unix.stackexchange.com/a/11323
 common_attrs_lines=$(echo "$probe_lines" | sed -ne '/CREATE_DEVICE_FILE/,$ p' | sed '/case USB_DEVICE_ID_RAZER_/Q')
-common_attrs=$(echo "$common_attrs_lines" | get_attr_from_create_device_file)
+common_attrs=$(echo "$common_attrs_lines" | get_device_attrs)
 
 # Iterate through all devices
 while IFS= read -r device_raw; do
@@ -179,7 +180,7 @@ while IFS= read -r device_raw; do
     echo "Generating for $device_name (1532:$device_pid) ..." >&2
 
     device_attrs_lines=$(echo "$probe_lines" | sed -n '/case '$device':/,/break;/p')
-    device_attrs=$(echo "$device_attrs_lines" | get_attr_from_create_device_file)
+    device_attrs=$(echo "$device_attrs_lines" | get_device_attrs)
 
     all_attrs=$(echo "$device_attrs"; echo "$common_attrs")
     all_attrs=$(echo "$all_attrs" | sort)
