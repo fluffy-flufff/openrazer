@@ -171,6 +171,8 @@ struct razer_kbd_device {
     unsigned char usb_interface_protocol;
     unsigned short usb_vid;
     unsigned short usb_pid;
+    bool has_logo_state;
+    bool has_logo_brightness;
 
     unsigned char block_keys[3];
     unsigned char left_alt_on;

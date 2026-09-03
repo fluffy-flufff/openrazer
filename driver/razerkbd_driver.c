@@ -37,6 +37,11 @@ MODULE_LICENSE(DRIVER_LICENSE);
 #define RAZER_BRIGHTNESS_DOWN KEY_MACRO28
 #define RAZER_BRIGHTNESS_UP KEY_MACRO27
 
+enum razer_kbd_logo_property {
+    RAZER_KBD_LOGO_ENABLED,
+    RAZER_KBD_LOGO_BRIGHTNESS_NONZERO,
+};
+
 /*
  * Whether hid_report_raw_event() takes 6 parameters compared to the original 5 parameters.
  * See "HID: pass the buffer size to hid_report_raw_event"
@@ -313,6 +318,19 @@ static bool is_blade_laptop(struct razer_kbd_device *device)
         return true;
     }
     return false;
+}
+
+static bool has_inverted_led_state(const struct razer_kbd_device *device)
+{
+    switch (device->usb_pid) {
+    case USB_DEVICE_ID_RAZER_BLADE_STEALTH_LATE_2016:
+    case USB_DEVICE_ID_RAZER_BLADE_PRO_LATE_2016:
+    case USB_DEVICE_ID_RAZER_BLADE_QHD:
+    case USB_DEVICE_ID_RAZER_BLADE_LATE_2016:
+        return true;
+    default:
+        return false;
+    }
 }
 
 static int razer_kbd_pm_get(struct razer_kbd_device *device)
@@ -3670,19 +3688,46 @@ static ssize_t razer_attr_write_matrix_effect_breath(struct device *dev, struct 
     return count;
 }
 
-static int has_inverted_led_state(struct device *dev)
+static int razer_kbd_read_logo_property(struct razer_kbd_device *device,
+                                        enum razer_kbd_logo_property property,
+                                        unsigned char *value)
 {
-    struct razer_kbd_device *device = dev_get_drvdata(dev);
+    struct razer_report request = {0};
+    struct razer_report response = {0};
+    unsigned char result;
+    int err;
 
-    switch (device->usb_pid) {
-    case USB_DEVICE_ID_RAZER_BLADE_STEALTH_LATE_2016:
-    case USB_DEVICE_ID_RAZER_BLADE_PRO_LATE_2016:
-    case USB_DEVICE_ID_RAZER_BLADE_QHD:
-    case USB_DEVICE_ID_RAZER_BLADE_LATE_2016:
-        return 1;
+    switch (property) {
+    case RAZER_KBD_LOGO_ENABLED:
+        if (!device->has_logo_state)
+            return -EOPNOTSUPP;
+
+        request = razer_chroma_standard_get_led_effect(VARSTORE, LOGO_LED);
+        if (is_blade_laptop(device))
+            request = razer_chroma_standard_get_led_state(VARSTORE, LOGO_LED);
+        break;
+    case RAZER_KBD_LOGO_BRIGHTNESS_NONZERO:
+        if (!device->has_logo_brightness)
+            return -EOPNOTSUPP;
+
+        request = razer_chroma_standard_get_led_brightness(VARSTORE, LOGO_LED);
+        break;
     default:
-        return 0;
+        return -EINVAL;
     }
+    request.transaction_id.id = 0xFF;
+
+    err = razer_send_payload(device, &request, &response);
+    if (err)
+        return err;
+
+    result = response.arguments[2];
+    if (property == RAZER_KBD_LOGO_ENABLED &&
+        has_inverted_led_state(device) && (result == 0 || result == 1))
+        result = !result;
+    *value = result;
+
+    return 0;
 }
 
 /**
@@ -3693,29 +3738,14 @@ static int has_inverted_led_state(struct device *dev)
 static ssize_t razer_attr_read_logo_led_state(struct device *dev, struct device_attribute *attr, char *buf)
 {
     struct razer_kbd_device *device = dev_get_drvdata(dev);
-    struct razer_report request = {0};
-    struct razer_report response = {0};
-    int state;
+    unsigned char state;
     int err;
 
-    request = razer_chroma_standard_get_led_effect(VARSTORE, LOGO_LED);
-    request.transaction_id.id = 0xFF;
-
-    // Blade laptops don't use effect for logo on/off, and mode 2 ("blink") is technically unsupported.
-    if (is_blade_laptop(device)) {
-        request = razer_chroma_standard_get_led_state(VARSTORE, LOGO_LED);
-        request.transaction_id.id = 0xFF;
-    }
-
-    err = razer_send_payload(device, &request, &response);
+    err = razer_kbd_read_logo_property(device, RAZER_KBD_LOGO_ENABLED, &state);
     if (err)
         return err;
-    state = response.arguments[2];
 
-    if (has_inverted_led_state(dev) && (state == 0 || state == 1))
-        state = !state;
-
-    return sysfs_emit(buf, "%d\n", state);
+    return sysfs_emit(buf, "%u\n", state);
 }
 
 /**
@@ -3735,7 +3765,7 @@ static ssize_t razer_attr_write_logo_led_state(struct device *dev, struct device
     if (err < 0)
         return err;
 
-    if (has_inverted_led_state(dev) && (state == 0 || state == 1))
+    if (has_inverted_led_state(device) && (state == 0 || state == 1))
         state = !state;
 
     // Blade laptops are... different. They use state instead of effect.
@@ -3763,21 +3793,16 @@ static ssize_t razer_attr_write_logo_led_state(struct device *dev, struct device
 static ssize_t razer_attr_read_logo_led_brightness(struct device *dev, struct device_attribute *attr, char *buf)
 {
     struct razer_kbd_device *device = dev_get_drvdata(dev);
-    struct razer_report request = {0};
-    struct razer_report response = {0};
+    unsigned char brightness;
     int err;
 
-    if (device->usb_pid != USB_DEVICE_ID_RAZER_BLADE_PRO_EARLY_2020)
-        return -EINVAL;
-
-    request = razer_chroma_standard_get_led_brightness(VARSTORE, LOGO_LED);
-    request.transaction_id.id = 0xFF;
-
-    err = razer_send_payload(device, &request, &response);
+    err = razer_kbd_read_logo_property(device,
+                                       RAZER_KBD_LOGO_BRIGHTNESS_NONZERO,
+                                       &brightness);
     if (err)
         return err;
 
-    return sysfs_emit(buf, "%u\n", response.arguments[2]);
+    return sysfs_emit(buf, "%u\n", brightness);
 }
 
 /**
@@ -3793,7 +3818,7 @@ static ssize_t razer_attr_write_logo_led_brightness(struct device *dev, struct d
     unsigned char brightness;
     int err;
 
-    if (device->usb_pid != USB_DEVICE_ID_RAZER_BLADE_PRO_EARLY_2020)
+    if (!device->has_logo_brightness)
         return -EINVAL;
 
     err = kstrtou8(buf, 0, &brightness);
@@ -5798,6 +5823,7 @@ static int razer_kbd_probe(struct hid_device *hdev, const struct hid_device_id *
             CREATE_DEVICE_FILE(&hdev->dev, &dev_attr_matrix_effect_custom);          // Custom effect
             CREATE_DEVICE_FILE(&hdev->dev, &dev_attr_matrix_custom_frame);           // Set LED matrix
             CREATE_DEVICE_FILE(&hdev->dev, &dev_attr_fn_toggle);                     // Sets whether FN is requires for F-Keys
+            dev->has_logo_state = true;
             CREATE_DEVICE_FILE(&hdev->dev, &dev_attr_logo_led_state);                // Enable/Disable the logo
             break;
 
@@ -5836,6 +5862,7 @@ static int razer_kbd_probe(struct hid_device *hdev, const struct hid_device_id *
             CREATE_DEVICE_FILE(&hdev->dev, &dev_attr_matrix_effect_static);          // Static effect
             CREATE_DEVICE_FILE(&hdev->dev, &dev_attr_matrix_effect_custom);          // Custom effect
             CREATE_DEVICE_FILE(&hdev->dev, &dev_attr_matrix_custom_frame);           // Set LED matrix
+            dev->has_logo_state = true;
             CREATE_DEVICE_FILE(&hdev->dev, &dev_attr_logo_led_state);                // Enable/Disable the logo
             break;
 
@@ -5847,6 +5874,8 @@ static int razer_kbd_probe(struct hid_device *hdev, const struct hid_device_id *
             CREATE_DEVICE_FILE(&hdev->dev, &dev_attr_matrix_effect_static);          // Static effect
             CREATE_DEVICE_FILE(&hdev->dev, &dev_attr_matrix_effect_custom);          // Custom effect
             CREATE_DEVICE_FILE(&hdev->dev, &dev_attr_matrix_custom_frame);           // Set LED matrix
+            dev->has_logo_state = true;
+            dev->has_logo_brightness = true;
             CREATE_DEVICE_FILE(&hdev->dev, &dev_attr_logo_led_state);                // Enable/Disable the logo
             CREATE_DEVICE_FILE(&hdev->dev, &dev_attr_logo_led_brightness);           // Gets and sets logo brightness
             break;
