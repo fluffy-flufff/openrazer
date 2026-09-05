@@ -37,7 +37,7 @@ def set_backlight_brightness(self, brightness):
         driver_file.write(str(brightness))
 
     # Notify others
-    self.send_effect_event('setBrightness', brightness)
+    self.send_effect_event('backlight', 'setBrightness', brightness)
 
 
 @endpoint('razer.device.lighting.logo', 'getLogoActive', out_sig='b')
@@ -100,7 +100,7 @@ def set_logo_brightness(self, brightness):
         driver_file.write(str(brightness))
 
     # Notify others
-    self.send_effect_event('setBrightness', brightness)
+    self.send_effect_event('logo', 'setBrightness', brightness)
 
 
 @endpoint('razer.device.lighting.scroll', 'getScrollBrightness', out_sig='d')
@@ -137,4 +137,4 @@ def set_scroll_brightness(self, brightness):
         driver_file.write(str(brightness))
 
     # Notify others
-    self.send_effect_event('setBrightness', brightness)
+    self.send_effect_event('scroll', 'setBrightness', brightness)

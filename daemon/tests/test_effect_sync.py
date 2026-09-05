@@ -5,17 +5,18 @@ import unittest.mock
 
 import openrazer_daemon.misc.effect_sync
 
-# msg type = effect, arg = orig_device, arg = effect_name, arg.. = arg..
-MSG1 = ('effect', None, 'setBrightness', 255)
+# msg type = effect, arg = orig_device, arg = zone, arg = effect_name, arg.. = arg..
+MSG1 = ('effect', None, 'backlight', 'setBrightness', 255)
 
 # Static effect message from blackwidow chroma
-MSG2 = ('effect', None, 'setStatic', 255, 255, 0)
+MSG2 = ('effect', None, 'backlight', 'setStatic', 255, 255, 0)
 # Static effect message from blackwidow standard
-MSG3 = ('effect', None, 'setStatic')
+MSG3 = ('effect', None, 'backlight', 'setStatic')
 # Breathing effect message from blackwidow chroma
-MSG4 = ('effect', None, 'setBreathSingle', 255, 255, 0)
+MSG4 = ('effect', None, 'backlight', 'setBreathSingle', 255, 255, 0)
 # Pulsate effect message from blackwidow standard
-MSG5 = ('effect', None, 'setPulsate')
+MSG5 = ('effect', None, 'backlight', 'setPulsate')
+MSG6 = ('effect', None, 'logo', 'setStatic', 255, 255, 0)
 
 
 def logger_mock(*args):
@@ -100,14 +101,14 @@ class EffectSyncTest(unittest.TestCase):
 
         new_msg = self.effect_sync.run_effect.call_args_list[0][0]
         # Check function is called run_effect('setBrightness', 255)
-        self.assertEqual(new_msg[0], MSG1[2])
-        self.assertEqual(new_msg[1], MSG1[3])
+        self.assertEqual(new_msg[0], MSG1[3])
+        self.assertEqual(new_msg[1], MSG1[4])
 
     def test_notify_run_effect(self):
         self.effect_sync.notify(MSG1)
 
-        self.assertEqual(self.hardware_device.effect_call[0], MSG1[2])
-        self.assertEqual(self.hardware_device.effect_call[1], MSG1[3])
+        self.assertEqual(self.hardware_device.effect_call[0], MSG1[3])
+        self.assertEqual(self.hardware_device.effect_call[1], MSG1[4])
 
         self.assertIsNotNone(self.hardware_device.disable_notify)
         self.assertFalse(self.hardware_device.disable_notify)
@@ -120,7 +121,7 @@ class EffectSyncTest(unittest.TestCase):
 
         self.effect_sync.notify(MSG2)
 
-        self.assertEqual(self.hardware_device.effect_call[0], MSG2[2])
+        self.assertEqual(self.hardware_device.effect_call[0], MSG2[3])
 
     def test_notify_run_effect_edge_case_2(self):
         # Set the parent to a blackwidow chroma
@@ -158,3 +159,12 @@ class EffectSyncTest(unittest.TestCase):
 
         # Logger should have called .exception
         self.assertTrue(self.effect_sync._logger.exception.called)
+
+    def test_notify_non_backlight_effect(self):
+        self.hardware_device = DummyHardwareBlackWidowChroma()
+        self.effect_sync._parent = self.hardware_device
+        self.hardware_device.register_observer(self.effect_sync)
+
+        self.effect_sync.notify(MSG6)
+
+        self.assertTupleEqual(self.hardware_device.effect_call, ('setStatic', 255, 255, 0))

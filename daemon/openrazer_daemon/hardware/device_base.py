@@ -375,9 +375,12 @@ class RazerDevice(DBusService):
             finally:
                 self.restore_brightness()
 
-    def send_effect_event(self, effect_name, *args):
+    def send_effect_event(self, zone, effect_name, *args):
         """
         Send effect event
+
+        :param zone: Lighting zone
+        :type zone: str
 
         :param effect_name: Effect name
         :type effect_name: str
@@ -385,7 +388,7 @@ class RazerDevice(DBusService):
         :param args: Effect arguments
         :type args: list
         """
-        payload = ['effect', self, effect_name]
+        payload = ['effect', self, zone, effect_name]
         payload.extend(args)
 
         self.notify_observers(tuple(payload))

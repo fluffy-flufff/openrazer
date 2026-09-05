@@ -47,7 +47,7 @@ def set_brightness(self, brightness):
         driver_file.write(str(brightness))
 
     # Notify others
-    self.send_effect_event('setBrightness', brightness)
+    self.send_effect_event('backlight', 'setBrightness', brightness)
 
 
 @endpoint('razer.device.led.gamemode', 'getGameMode', out_sig='b')
@@ -233,7 +233,7 @@ def set_wave_effect(self, direction):
     self.logger.debug("DBus call set_wave_effect")
 
     # Notify others
-    self.send_effect_event('setWave', direction)
+    self.send_effect_event('backlight', 'setWave', direction)
 
     # remember effect
     self.set_persistence("backlight", "effect", 'wave')
@@ -259,7 +259,7 @@ def set_wheel_effect(self, direction):
     self.logger.debug("DBus call set_wheel_effect")
 
     # Notify others
-    self.send_effect_event('setWheel', direction)
+    self.send_effect_event('backlight', 'setWheel', direction)
 
     # Note: wheel direction is saved in wave_dir!
     # TODO: Add wheel_dir field handling instead!
@@ -293,7 +293,7 @@ def set_static_effect(self, red, green, blue):
     self.logger.debug("DBus call set_static_effect")
 
     # Notify others
-    self.send_effect_event('setStatic', red, green, blue)
+    self.send_effect_event('backlight', 'setStatic', red, green, blue)
 
     # remember effect
     self.set_persistence("backlight", "effect", 'static')
@@ -324,7 +324,7 @@ def set_blinking_effect(self, red, green, blue):
     self.logger.debug("DBus call set_blinking_effect")
 
     # Notify others
-    self.send_effect_event('setBlinking', red, green, blue)
+    self.send_effect_event('backlight', 'setBlinking', red, green, blue)
 
     # remember effect
     self.set_persistence("backlight", "effect", 'blinking')
@@ -346,7 +346,7 @@ def set_spectrum_effect(self):
     self.logger.debug("DBus call set_spectrum_effect")
 
     # Notify others
-    self.send_effect_event('setSpectrum')
+    self.send_effect_event('backlight', 'setSpectrum')
 
     # remember effect
     self.set_persistence("backlight", "effect", 'spectrum')
@@ -365,7 +365,7 @@ def set_none_effect(self):
     self.logger.debug("DBus call set_none_effect")
 
     # Notify others
-    self.send_effect_event('setNone')
+    self.send_effect_event('backlight', 'setNone')
 
     # remember effect
     self.set_persistence("backlight", "effect", 'none')
@@ -384,7 +384,7 @@ def trigger_reactive_effect(self):
     self.logger.debug("DBus call trigger_reactive_effect")
 
     # Notify others
-    self.send_effect_event('triggerReactive')
+    self.send_effect_event('backlight', 'triggerReactive')
 
     driver_path = self.get_driver_path('matrix_reactive_trigger')
 
@@ -414,7 +414,7 @@ def set_reactive_effect(self, red, green, blue, speed):
     driver_path = self.get_driver_path('matrix_effect_reactive')
 
     # Notify others
-    self.send_effect_event('setReactive', red, green, blue, speed)
+    self.send_effect_event('backlight', 'setReactive', red, green, blue, speed)
 
     # remember effect
     self.set_persistence("backlight", "effect", 'reactive')
@@ -439,7 +439,7 @@ def set_breath_random_effect(self):
     self.logger.debug("DBus call set_breath_random_effect")
 
     # Notify others
-    self.send_effect_event('setBreathRandom')
+    self.send_effect_event('backlight', 'setBreathRandom')
 
     # remember effect
     self.set_persistence("backlight", "effect", 'breathRandom')
@@ -469,7 +469,7 @@ def set_breath_single_effect(self, red, green, blue):
     self.logger.debug("DBus call set_breath_single_effect")
 
     # Notify others
-    self.send_effect_event('setBreathSingle', red, green, blue)
+    self.send_effect_event('backlight', 'setBreathSingle', red, green, blue)
 
     # remember effect
     self.set_persistence("backlight", "effect", 'breathSingle')
@@ -509,7 +509,7 @@ def set_breath_dual_effect(self, red1, green1, blue1, red2, green2, blue2):
     self.logger.debug("DBus call set_breath_dual_effect")
 
     # Notify others
-    self.send_effect_event('setBreathDual', red1, green1, blue1, red2, green2, blue2)
+    self.send_effect_event('backlight', 'setBreathDual', red1, green1, blue1, red2, green2, blue2)
 
     # remember effect
     self.set_persistence("backlight", "effect", 'breathDual')
@@ -558,7 +558,7 @@ def set_breath_triple_effect(self, red1, green1, blue1, red2, green2, blue2, red
     self.logger.debug("DBus call set_breath_triple_effect")
 
     # Notify others
-    self.send_effect_event('setBreathTriple', red1, green1, blue1, red2, green2, blue2, red3, green3, blue3)
+    self.send_effect_event('backlight', 'setBreathTriple', red1, green1, blue1, red2, green2, blue2, red3, green3, blue3)
 
     # remember effect
     self.set_persistence("backlight", "effect", 'breathTriple')
@@ -577,7 +577,7 @@ def set_custom_effect(self):
     """
     Set the device to use custom LED matrix
     """
-    self.send_effect_event('setCustom')
+    self.send_effect_event('backlight', 'setCustom')
 
     self._set_custom_effect()
 
@@ -596,7 +596,7 @@ def set_key_row(self, payload):
     :param payload: Binary payload
     :type payload: bytes
     """
-    self.send_effect_event('setCustom')
+    self.send_effect_event('backlight', 'setCustom')
 
     self._set_key_row(payload)
 
@@ -621,7 +621,7 @@ def set_ripple_effect(self, red, green, blue, refresh_rate):
     self.logger.debug("DBus call set_ripple_effect")
 
     # Notify others
-    self.send_effect_event('setRipple', red, green, blue, refresh_rate)
+    self.send_effect_event('backlight', 'setRipple', red, green, blue, refresh_rate)
 
     # remember effect
     self.set_persistence("backlight", "effect", 'ripple')
@@ -639,7 +639,7 @@ def set_ripple_effect_random_colour(self, refresh_rate):
     self.logger.debug("DBus call set_ripple_effect")
 
     # Notify others
-    self.send_effect_event('setRipple', None, None, None, refresh_rate)
+    self.send_effect_event('backlight', 'setRipple', None, None, None, refresh_rate)
 
     # remember effect
     self.set_persistence("backlight", "effect", 'rippleRandomColour')
@@ -658,7 +658,7 @@ def set_starlight_random_effect(self, speed):
         driver_file.write(bytes([speed]))
 
     # Notify others
-    self.send_effect_event('setStarlightRandom')
+    self.send_effect_event('backlight', 'setStarlightRandom')
 
     # remember effect
     self.set_persistence("backlight", "effect", 'starlightRandom')
@@ -678,7 +678,7 @@ def set_starlight_single_effect(self, red, green, blue, speed):
         driver_file.write(bytes([speed, red, green, blue]))
 
     # Notify others
-    self.send_effect_event('setStarlightSingle', red, green, blue, speed)
+    self.send_effect_event('backlight', 'setStarlightSingle', red, green, blue, speed)
 
     # remember effect
     self.set_persistence("backlight", "effect", 'starlightSingle')
@@ -699,7 +699,7 @@ def set_starlight_dual_effect(self, red1, green1, blue1, red2, green2, blue2, sp
         driver_file.write(bytes([speed, red1, green1, blue1, red2, green2, blue2]))
 
     # Notify others
-    self.send_effect_event('setStarlightDual', red1, green1, blue1, red2, green2, blue2, speed)
+    self.send_effect_event('backlight', 'setStarlightDual', red1, green1, blue1, red2, green2, blue2, speed)
 
     # remember effect
     self.set_persistence("backlight", "effect", 'starlightDual')

@@ -14,7 +14,7 @@ def set_logo_wave(self, direction):
     self.logger.debug("DBus call set_logo_wave")
 
     # Notify others
-    self.send_effect_event('setWave', direction)
+    self.send_effect_event('logo', 'setWave', direction)
 
     # remember effect
     self.set_persistence("logo", "effect", 'wave')
@@ -40,7 +40,7 @@ def set_scroll_wave(self, direction):
     self.logger.debug("DBus call set_scroll_wave")
 
     # Notify others
-    self.send_effect_event('setWave', direction)
+    self.send_effect_event('scroll', 'setWave', direction)
 
     # remember effect
     self.set_persistence("scroll", "effect", 'wave')
@@ -95,7 +95,7 @@ def set_left_brightness(self, brightness):
         driver_file.write(str(brightness))
 
     # Notify others
-    self.send_effect_event('setBrightness', brightness)
+    self.send_effect_event('left', 'setBrightness', brightness)
 
 
 @endpoint('razer.device.lighting.left', 'setLeftWave', in_sig='i')
@@ -109,7 +109,7 @@ def set_left_wave(self, direction):
     self.logger.debug("DBus call set_left_wave")
 
     # Notify others
-    self.send_effect_event('setWave', direction)
+    self.send_effect_event('left', 'setWave', direction)
 
     # remember effect
     self.set_persistence("left", "effect", 'wave')
@@ -141,7 +141,7 @@ def set_left_static(self, red, green, blue):
     self.logger.debug("DBus call set_left_static")
 
     # Notify others
-    self.send_effect_event('setStatic', red, green, blue)
+    self.send_effect_event('left', 'setStatic', red, green, blue)
 
     # remember effect
     self.set_persistence("left", "effect", 'static')
@@ -163,7 +163,7 @@ def set_left_spectrum(self):
     self.logger.debug("DBus call set_left_spectrum")
 
     # Notify others
-    self.send_effect_event('setSpectrum')
+    self.send_effect_event('left', 'setSpectrum')
 
     # remember effect
     self.set_persistence("left", "effect", 'spectrum')
@@ -182,7 +182,7 @@ def set_left_none(self):
     self.logger.debug("DBus call set_left_none")
 
     # Notify others
-    self.send_effect_event('setNone')
+    self.send_effect_event('left', 'setNone')
 
     # remember effect
     self.set_persistence("left", "effect", 'none')
@@ -215,7 +215,7 @@ def set_left_reactive(self, red, green, blue, speed):
     driver_path = self.get_driver_path('left_matrix_effect_reactive')
 
     # Notify others
-    self.send_effect_event('setReactive', red, green, blue, speed)
+    self.send_effect_event('left', 'setReactive', red, green, blue, speed)
 
     # remember effect
     self.set_persistence("left", "effect", 'reactive')
@@ -240,7 +240,7 @@ def set_left_breath_random(self):
     self.logger.debug("DBus call set_left_breath_random")
 
     # Notify others
-    self.send_effect_event('setBreathRandom')
+    self.send_effect_event('left', 'setBreathRandom')
 
     # remember effect
     self.set_persistence("left", "effect", 'breathRandom')
@@ -270,7 +270,7 @@ def set_left_breath_single(self, red, green, blue):
     self.logger.debug("DBus call set_left_breath_single")
 
     # Notify others
-    self.send_effect_event('setBreathSingle', red, green, blue)
+    self.send_effect_event('left', 'setBreathSingle', red, green, blue)
 
     # remember effect
     self.set_persistence("left", "effect", 'breathSingle')
@@ -310,7 +310,7 @@ def set_left_breath_dual(self, red1, green1, blue1, red2, green2, blue2):
     self.logger.debug("DBus call set_left_breath_dual")
 
     # Notify others
-    self.send_effect_event('setBreathDual', red1, green1, blue1, red2, green2, blue2)
+    self.send_effect_event('left', 'setBreathDual', red1, green1, blue1, red2, green2, blue2)
 
     # remember effect
     self.set_persistence("left", "effect", 'breathDual')
@@ -363,7 +363,7 @@ def set_right_brightness(self, brightness):
         driver_file.write(str(brightness))
 
     # Notify others
-    self.send_effect_event('setBrightness', brightness)
+    self.send_effect_event('right', 'setBrightness', brightness)
 
 
 @endpoint('razer.device.lighting.right', 'setRightWave', in_sig='i')
@@ -377,7 +377,7 @@ def set_right_wave(self, direction):
     self.logger.debug("DBus call set_right_wave")
 
     # Notify others
-    self.send_effect_event('setWave', direction)
+    self.send_effect_event('right', 'setWave', direction)
 
     # remember effect
     self.set_persistence("right", "effect", 'wave')
@@ -409,7 +409,7 @@ def set_right_static(self, red, green, blue):
     self.logger.debug("DBus call set_right_static")
 
     # Notify others
-    self.send_effect_event('setStatic', red, green, blue)
+    self.send_effect_event('right', 'setStatic', red, green, blue)
 
     # remember effect
     self.set_persistence("right", "effect", 'static')
@@ -431,7 +431,7 @@ def set_right_spectrum(self):
     self.logger.debug("DBus call set_right_spectrum")
 
     # Notify others
-    self.send_effect_event('setSpectrum')
+    self.send_effect_event('right', 'setSpectrum')
 
     # remember effect
     self.set_persistence("right", "effect", 'spectrum')
@@ -450,7 +450,7 @@ def set_right_none(self):
     self.logger.debug("DBus call set_right_none")
 
     # Notify others
-    self.send_effect_event('setNone')
+    self.send_effect_event('right', 'setNone')
 
     # remember effect
     self.set_persistence("right", "effect", 'none')
@@ -483,7 +483,7 @@ def set_right_reactive(self, red, green, blue, speed):
     driver_path = self.get_driver_path('right_matrix_effect_reactive')
 
     # Notify others
-    self.send_effect_event('setReactive', red, green, blue, speed)
+    self.send_effect_event('right', 'setReactive', red, green, blue, speed)
 
     # remember effect
     self.set_persistence("right", "effect", 'reactive')
@@ -508,7 +508,7 @@ def set_right_breath_random(self):
     self.logger.debug("DBus call set_right_breath_random")
 
     # Notify others
-    self.send_effect_event('setBreathRandom')
+    self.send_effect_event('right', 'setBreathRandom')
 
     # remember effect
     self.set_persistence("right", "effect", 'breathRandom')
@@ -538,7 +538,7 @@ def set_right_breath_single(self, red, green, blue):
     self.logger.debug("DBus call set_right_breath_single")
 
     # Notify others
-    self.send_effect_event('setBreathSingle', red, green, blue)
+    self.send_effect_event('right', 'setBreathSingle', red, green, blue)
 
     # remember effect
     self.set_persistence("right", "effect", 'breathSingle')
@@ -578,7 +578,7 @@ def set_right_breath_dual(self, red1, green1, blue1, red2, green2, blue2):
     self.logger.debug("DBus call set_right_breath_dual")
 
     # Notify others
-    self.send_effect_event('setBreathDual', red1, green1, blue1, red2, green2, blue2)
+    self.send_effect_event('right', 'setBreathDual', red1, green1, blue1, red2, green2, blue2)
 
     # remember effect
     self.set_persistence("right", "effect", 'breathDual')
@@ -603,7 +603,7 @@ def set_backlight_wave(self, direction):
     self.logger.debug("DBus call set_backlight_wave")
 
     # Notify others
-    self.send_effect_event('setWave', direction)
+    self.send_effect_event('backlight', 'setWave', direction)
 
     # remember effect
     self.set_persistence("backlight", "effect", 'wave')
@@ -635,7 +635,7 @@ def set_backlight_static(self, red, green, blue):
     self.logger.debug("DBus call set_backlight_static")
 
     # Notify others
-    self.send_effect_event('setStatic', red, green, blue)
+    self.send_effect_event('backlight', 'setStatic', red, green, blue)
 
     # remember effect
     self.set_persistence("backlight", "effect", 'static')
@@ -657,7 +657,7 @@ def set_backlight_spectrum(self):
     self.logger.debug("DBus call set_backlight_spectrum")
 
     # Notify others
-    self.send_effect_event('setSpectrum')
+    self.send_effect_event('backlight', 'setSpectrum')
 
     # remember effect
     self.set_persistence("backlight", "effect", 'spectrum')
@@ -676,7 +676,7 @@ def set_backlight_none(self):
     self.logger.debug("DBus call set_backlight_none")
 
     # Notify others
-    self.send_effect_event('setNone')
+    self.send_effect_event('backlight', 'setNone')
 
     # remember effect
     self.set_persistence("backlight", "effect", 'none')
@@ -695,7 +695,7 @@ def set_backlight_on(self):
     self.logger.debug("DBus call set_backlight_on")
 
     # Notify others
-    self.send_effect_event('setOn')
+    self.send_effect_event('backlight', 'setOn')
 
     # remember effect
     self.set_persistence("backlight", "effect", 'on')
@@ -728,7 +728,7 @@ def set_backlight_reactive(self, red, green, blue, speed):
     driver_path = self.get_driver_path('backlight_matrix_effect_reactive')
 
     # Notify others
-    self.send_effect_event('setReactive', red, green, blue, speed)
+    self.send_effect_event('backlight', 'setReactive', red, green, blue, speed)
 
     # remember effect
     self.set_persistence("backlight", "effect", 'reactive')
@@ -753,7 +753,7 @@ def set_backlight_breath_random(self):
     self.logger.debug("DBus call set_backlight_breath_random")
 
     # Notify others
-    self.send_effect_event('setBreathRandom')
+    self.send_effect_event('backlight', 'setBreathRandom')
 
     # remember effect
     self.set_persistence("backlight", "effect", 'breathRandom')
@@ -783,7 +783,7 @@ def set_backlight_breath_single(self, red, green, blue):
     self.logger.debug("DBus call set_backlight_breath_single")
 
     # Notify others
-    self.send_effect_event('setBreathSingle', red, green, blue)
+    self.send_effect_event('backlight', 'setBreathSingle', red, green, blue)
 
     # remember effect
     self.set_persistence("backlight", "effect", 'breathSingle')
@@ -823,7 +823,7 @@ def set_backlight_breath_dual(self, red1, green1, blue1, red2, green2, blue2):
     self.logger.debug("DBus call set_backlight_breath_dual")
 
     # Notify others
-    self.send_effect_event('setBreathDual', red1, green1, blue1, red2, green2, blue2)
+    self.send_effect_event('backlight', 'setBreathDual', red1, green1, blue1, red2, green2, blue2)
 
     # remember effect
     self.set_persistence("backlight", "effect", 'breathDual')

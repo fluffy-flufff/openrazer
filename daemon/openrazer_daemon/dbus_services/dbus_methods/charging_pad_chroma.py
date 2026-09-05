@@ -41,7 +41,7 @@ def set_charging_brightness(self, brightness):
         driver_file.write(str(brightness))
 
     # Notify others
-    self.send_effect_event('setBrightness', brightness)
+    self.send_effect_event('charging', 'setBrightness', brightness)
 
 
 @endpoint('razer.device.lighting.charging', 'setChargingWave', in_sig='i')
@@ -54,7 +54,7 @@ def set_charging_wave(self, direction):
     self.logger.debug("DBus call set_charging_wave")
 
     # Notify others
-    self.send_effect_event('setWave', direction)
+    self.send_effect_event('charging', 'setWave', direction)
 
     # remember effect
     self.set_persistence("charging", "effect", 'wave')
@@ -86,7 +86,7 @@ def set_charging_static(self, red, green, blue):
     self.logger.debug("DBus call set_charging_static")
 
     # Notify others
-    self.send_effect_event('setStatic', red, green, blue)
+    self.send_effect_event('charging', 'setStatic', red, green, blue)
 
     # remember effect
     self.set_persistence("charging", "effect", 'static')
@@ -108,7 +108,7 @@ def set_charging_spectrum(self):
     self.logger.debug("DBus call set_charging_spectrum")
 
     # Notify others
-    self.send_effect_event('setSpectrum')
+    self.send_effect_event('charging', 'setSpectrum')
 
     # remember effect
     self.set_persistence("charging", "effect", 'spectrum')
@@ -127,7 +127,7 @@ def set_charging_none(self):
     self.logger.debug("DBus call set_charging_none")
 
     # Notify others
-    self.send_effect_event('setNone')
+    self.send_effect_event('charging', 'setNone')
 
     # remember effect
     self.set_persistence("charging", "effect", 'none')
@@ -146,7 +146,7 @@ def set_charging_breath_random(self):
     self.logger.debug("DBus call set_charging_breath_random")
 
     # Notify others
-    self.send_effect_event('setBreathRandom')
+    self.send_effect_event('charging', 'setBreathRandom')
 
     # remember effect
     self.set_persistence("charging", "effect", 'breathRandom')
@@ -176,7 +176,7 @@ def set_charging_breath_single(self, red, green, blue):
     self.logger.debug("DBus call set_charging_breath_single")
 
     # Notify others
-    self.send_effect_event('setBreathSingle', red, green, blue)
+    self.send_effect_event('charging', 'setBreathSingle', red, green, blue)
 
     # remember effect
     self.set_persistence("charging", "effect", 'breathSingle')
@@ -216,7 +216,7 @@ def set_charging_breath_dual(self, red1, green1, blue1, red2, green2, blue2):
     self.logger.debug("DBus call set_charging_breath_dual")
 
     # Notify others
-    self.send_effect_event('setBreathDual', red1, green1, blue1, red2, green2, blue2)
+    self.send_effect_event('charging', 'setBreathDual', red1, green1, blue1, red2, green2, blue2)
 
     # remember effect
     self.set_persistence("charging", "effect", 'breathDual')
@@ -268,7 +268,7 @@ def set_fast_charging_brightness(self, brightness):
         driver_file.write(str(brightness))
 
     # Notify others
-    self.send_effect_event('setBrightness', brightness)
+    self.send_effect_event('fast_charging', 'setBrightness', brightness)
 
 
 @endpoint('razer.device.lighting.fast_charging', 'setFastChargingWave', in_sig='i')
@@ -281,7 +281,7 @@ def set_fast_charging_wave(self, direction):
     self.logger.debug("DBus call set_fast_charging_wave")
 
     # Notify others
-    self.send_effect_event('setWave', direction)
+    self.send_effect_event('fast_charging', 'setWave', direction)
 
     # remember effect
     self.set_persistence("fast_charging", "effect", 'wave')
@@ -313,7 +313,7 @@ def set_fast_charging_static(self, red, green, blue):
     self.logger.debug("DBus call set_fast_charging_static")
 
     # Notify others
-    self.send_effect_event('setStatic', red, green, blue)
+    self.send_effect_event('fast_charging', 'setStatic', red, green, blue)
 
     # remember effect
     self.set_persistence("fast_charging", "effect", 'static')
@@ -335,7 +335,7 @@ def set_fast_charging_spectrum(self):
     self.logger.debug("DBus call set_fast_charging_spectrum")
 
     # Notify others
-    self.send_effect_event('setSpectrum')
+    self.send_effect_event('fast_charging', 'setSpectrum')
 
     # remember effect
     self.set_persistence("fast_charging", "effect", 'spectrum')
@@ -354,7 +354,7 @@ def set_fast_charging_none(self):
     self.logger.debug("DBus call set_fast_charging_none")
 
     # Notify others
-    self.send_effect_event('setNone')
+    self.send_effect_event('fast_charging', 'setNone')
 
     # remember effect
     self.set_persistence("fast_charging", "effect", 'none')
@@ -373,7 +373,7 @@ def set_fast_charging_breath_random(self):
     self.logger.debug("DBus call set_fast_charging_breath_random")
 
     # Notify others
-    self.send_effect_event('setBreathRandom')
+    self.send_effect_event('fast_charging', 'setBreathRandom')
 
     # remember effect
     self.set_persistence("fast_charging", "effect", 'breathRandom')
@@ -403,7 +403,7 @@ def set_fast_charging_breath_single(self, red, green, blue):
     self.logger.debug("DBus call set_fast_charging_breath_single")
 
     # Notify others
-    self.send_effect_event('setBreathSingle', red, green, blue)
+    self.send_effect_event('fast_charging', 'setBreathSingle', red, green, blue)
 
     # remember effect
     self.set_persistence("fast_charging", "effect", 'breathSingle')
@@ -443,7 +443,7 @@ def set_fast_charging_breath_dual(self, red1, green1, blue1, red2, green2, blue2
     self.logger.debug("DBus call set_fast_charging_breath_dual")
 
     # Notify others
-    self.send_effect_event('setBreathDual', red1, green1, blue1, red2, green2, blue2)
+    self.send_effect_event('fast_charging', 'setBreathDual', red1, green1, blue1, red2, green2, blue2)
 
     # remember effect
     self.set_persistence("fast_charging", "effect", 'breathDual')
@@ -495,7 +495,7 @@ def set_fully_charged_brightness(self, brightness):
         driver_file.write(str(brightness))
 
     # Notify others
-    self.send_effect_event('setBrightness', brightness)
+    self.send_effect_event('fully_charged', 'setBrightness', brightness)
 
 
 @endpoint('razer.device.lighting.fully_charged', 'setFullyChargedWave', in_sig='i')
@@ -508,7 +508,7 @@ def set_fully_charged_wave(self, direction):
     self.logger.debug("DBus call set_fully_charged_wave")
 
     # Notify others
-    self.send_effect_event('setWave', direction)
+    self.send_effect_event('fully_charged', 'setWave', direction)
 
     # remember effect
     self.set_persistence("fully_charged", "effect", 'wave')
@@ -540,7 +540,7 @@ def set_fully_charged_static(self, red, green, blue):
     self.logger.debug("DBus call set_fully_charged_static")
 
     # Notify others
-    self.send_effect_event('setStatic', red, green, blue)
+    self.send_effect_event('fully_charged', 'setStatic', red, green, blue)
 
     # remember effect
     self.set_persistence("fully_charged", "effect", 'static')
@@ -562,7 +562,7 @@ def set_fully_charged_spectrum(self):
     self.logger.debug("DBus call set_fully_charged_spectrum")
 
     # Notify others
-    self.send_effect_event('setSpectrum')
+    self.send_effect_event('fully_charged', 'setSpectrum')
 
     # remember effect
     self.set_persistence("fully_charged", "effect", 'spectrum')
@@ -581,7 +581,7 @@ def set_fully_charged_none(self):
     self.logger.debug("DBus call set_fully_charged_none")
 
     # Notify others
-    self.send_effect_event('setNone')
+    self.send_effect_event('fully_charged', 'setNone')
 
     # remember effect
     self.set_persistence("fully_charged", "effect", 'none')
@@ -600,7 +600,7 @@ def set_fully_charged_breath_random(self):
     self.logger.debug("DBus call set_fully_charged_breath_random")
 
     # Notify others
-    self.send_effect_event('setBreathRandom')
+    self.send_effect_event('fully_charged', 'setBreathRandom')
 
     # remember effect
     self.set_persistence("fully_charged", "effect", 'breathRandom')
@@ -630,7 +630,7 @@ def set_fully_charged_breath_single(self, red, green, blue):
     self.logger.debug("DBus call set_fully_charged_breath_single")
 
     # Notify others
-    self.send_effect_event('setBreathSingle', red, green, blue)
+    self.send_effect_event('fully_charged', 'setBreathSingle', red, green, blue)
 
     # remember effect
     self.set_persistence("fully_charged", "effect", 'breathSingle')
@@ -670,7 +670,7 @@ def set_fully_charged_breath_dual(self, red1, green1, blue1, red2, green2, blue2
     self.logger.debug("DBus call set_fully_charged_breath_dual")
 
     # Notify others
-    self.send_effect_event('setBreathDual', red1, green1, blue1, red2, green2, blue2)
+    self.send_effect_event('fully_charged', 'setBreathDual', red1, green1, blue1, red2, green2, blue2)
 
     # remember effect
     self.set_persistence("fully_charged", "effect", 'breathDual')
