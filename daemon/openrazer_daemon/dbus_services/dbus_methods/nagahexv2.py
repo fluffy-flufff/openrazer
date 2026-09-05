@@ -65,6 +65,8 @@ def set_logo_none(self):
 
     # remember effect
     self.set_persistence("logo", "effect", 'none')
+    if 'set_logo_active' in self.METHODS:
+        self.set_persistence("logo", "active", False)
 
     driver_path = self.get_driver_path('logo_matrix_effect_none')
 
@@ -84,6 +86,8 @@ def set_logo_on(self):
 
     # remember effect
     self.set_persistence("logo", "effect", 'on')
+    if 'set_logo_active' in self.METHODS:
+        self.set_persistence("logo", "active", True)
 
     driver_path = self.get_driver_path('logo_matrix_effect_on')
 
@@ -141,6 +145,8 @@ def set_logo_breath_mono(self):
 
     # remember effect
     self.set_persistence("logo", "effect", 'breathMono')
+    if 'set_logo_active' in self.METHODS:
+        self.set_persistence("logo", "active", True)
 
     driver_path = self.get_driver_path('logo_matrix_effect_breath')
 

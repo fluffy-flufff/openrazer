@@ -1825,7 +1825,8 @@ class RazerBladeProEarly2020(_RippleKeyboard):
     MATRIX_DIMS = [6, 16]
     METHODS = ['get_device_type_keyboard', 'get_logo_active', 'set_logo_active', 'set_wave_effect', 'set_static_effect', 'set_spectrum_effect',
                'set_reactive_effect', 'set_none_effect', 'set_custom_effect', 'set_key_row',
-               'set_ripple_effect', 'set_ripple_effect_random_colour']
+               'set_ripple_effect', 'set_ripple_effect_random_colour',
+               'set_logo_on', 'set_logo_none', 'set_logo_breath_mono']
 
     DEVICE_IMAGE = "https://assets.razerzone.com/eeimages/support/products/1654/blade-pro-17-2020-2.png"
 

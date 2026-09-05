@@ -3717,6 +3717,43 @@ static ssize_t razer_attr_write_logo_led_state(struct device *dev, struct device
     return count;
 }
 
+static ssize_t razer_attr_write_logo_effect(struct device *dev, size_t count, unsigned char effect, bool enabled)
+{
+    struct razer_kbd_device *device = dev_get_drvdata(dev);
+    struct razer_report request = {0};
+    struct razer_report response = {0};
+    int err;
+
+    request = razer_chroma_standard_set_led_effect(VARSTORE, LOGO_LED, effect);
+    request.transaction_id.id = 0xFF;
+    err = razer_send_payload(device, &request, &response);
+    if (err)
+        return err;
+
+    request = razer_chroma_standard_set_led_state(VARSTORE, LOGO_LED, enabled);
+    request.transaction_id.id = 0xFF;
+    err = razer_send_payload(device, &request, &response);
+    if (err)
+        return err;
+
+    return count;
+}
+
+static ssize_t razer_attr_write_logo_matrix_effect_on(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+    return razer_attr_write_logo_effect(dev, count, CLASSIC_EFFECT_STATIC, true);
+}
+
+static ssize_t razer_attr_write_logo_matrix_effect_breath(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+    return razer_attr_write_logo_effect(dev, count, CLASSIC_EFFECT_BREATHING, true);
+}
+
+static ssize_t razer_attr_write_logo_matrix_effect_none(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+    return razer_attr_write_logo_effect(dev, count, CLASSIC_EFFECT_STATIC, false);
+}
+
 /**
  * Write device file "matrix_effect_custom"
  *
@@ -4743,6 +4780,9 @@ static DEVICE_ATTR(game_led_state,          0660, razer_attr_read_game_led_state
 static DEVICE_ATTR(macro_led_state,         0660, razer_attr_read_macro_led_state,            razer_attr_write_macro_led_state);
 static DEVICE_ATTR(macro_led_effect,        0660, razer_attr_read_macro_led_effect,           razer_attr_write_macro_led_effect);
 static DEVICE_ATTR(logo_led_state,          0660, razer_attr_read_logo_led_state,             razer_attr_write_logo_led_state);
+static DEVICE_ATTR(logo_matrix_effect_breath, 0220, NULL,                                      razer_attr_write_logo_matrix_effect_breath);
+static DEVICE_ATTR(logo_matrix_effect_none,   0220, NULL,                                      razer_attr_write_logo_matrix_effect_none);
+static DEVICE_ATTR(logo_matrix_effect_on,     0220, NULL,                                      razer_attr_write_logo_matrix_effect_on);
 static DEVICE_ATTR(profile_led_red,         0660, razer_attr_read_profile_led_red,            razer_attr_write_profile_led_red);
 static DEVICE_ATTR(profile_led_green,       0660, razer_attr_read_profile_led_green,          razer_attr_write_profile_led_green);
 static DEVICE_ATTR(profile_led_blue,        0660, razer_attr_read_profile_led_blue,           razer_attr_write_profile_led_blue);
@@ -5754,6 +5794,9 @@ static int razer_kbd_probe(struct hid_device *hdev, const struct hid_device_id *
             CREATE_DEVICE_FILE(&hdev->dev, &dev_attr_matrix_effect_custom);          // Custom effect
             CREATE_DEVICE_FILE(&hdev->dev, &dev_attr_matrix_custom_frame);           // Set LED matrix
             CREATE_DEVICE_FILE(&hdev->dev, &dev_attr_logo_led_state);                // Enable/Disable the logo
+            CREATE_DEVICE_FILE(&hdev->dev, &dev_attr_logo_matrix_effect_breath);     // Breathing logo
+            CREATE_DEVICE_FILE(&hdev->dev, &dev_attr_logo_matrix_effect_none);       // Disable logo
+            CREATE_DEVICE_FILE(&hdev->dev, &dev_attr_logo_matrix_effect_on);         // Static logo
             break;
 
         case USB_DEVICE_ID_RAZER_BLACKWIDOW_CHROMA:
@@ -6302,6 +6345,9 @@ static void razer_kbd_disconnect(struct hid_device *hdev)
             device_remove_file(&hdev->dev, &dev_attr_matrix_effect_custom);          // Custom effect
             device_remove_file(&hdev->dev, &dev_attr_matrix_custom_frame);           // Set LED matrix
             device_remove_file(&hdev->dev, &dev_attr_logo_led_state);                // Enable/Disable the logo
+            device_remove_file(&hdev->dev, &dev_attr_logo_matrix_effect_breath);     // Breathing logo
+            device_remove_file(&hdev->dev, &dev_attr_logo_matrix_effect_none);       // Disable logo
+            device_remove_file(&hdev->dev, &dev_attr_logo_matrix_effect_on);         // Static logo
             break;
 
         case USB_DEVICE_ID_RAZER_BLACKWIDOW_CHROMA:
