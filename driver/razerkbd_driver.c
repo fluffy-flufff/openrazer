@@ -407,13 +407,18 @@ static int __must_check razer_send_payload_no_response(struct razer_kbd_device *
     struct usb_device *usb_dev = hid_to_usb_dev(device->hdev);
     uint report_index, response_index;
     ulong wait;
+    int err;
 
     /* Except the caller to have set the transaction_id */
     WARN_ON(request->transaction_id.id == 0x00);
 
     razer_get_report_params(usb_dev, &report_index, &response_index, &wait);
 
-    return razer_send_control_msg(device->hdev, request, sizeof(*request), report_index, wait);
+    mutex_lock(&device->lock);
+    err = razer_send_control_msg(device->hdev, request, sizeof(*request), report_index, wait);
+    mutex_unlock(&device->lock);
+
+    return err;
 }
 
 /**
