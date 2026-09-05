@@ -223,16 +223,16 @@ class RippleManager(object):
         """
         if not isinstance(msg, tuple):
             self._logger.warning("Got msg that was not a tuple")
-        elif msg[0] == 'effect':
+        elif msg[0] == 'effect' and (msg[2] == 'backlight' or msg[1] is not self._parent):
             # We have a message directed at us
             # MSG format
-            #  0         1       2             3
-            # ('effect', Device, 'effectName', 'effectparams'...)
+            #  0         1       2       3             4
+            # ('effect', Device, 'zone', 'effectName', 'effectparams'...)
             # Device is the device the msg originated from (could be parent device)
-            if msg[2] == 'setRipple':
-                # Get (red, green, blue) tuple (args 3:6), and refreshrate arg 6
+            if msg[3] == 'setRipple':
+                # Get (red, green, blue) tuple (args 4:7), and refreshrate arg 7
                 self._parent.key_manager.temp_key_store_state = True
-                self._ripple_thread.enable(msg[3:6], msg[6])
+                self._ripple_thread.enable(msg[4:7], msg[7])
             else:
                 # Effect other than ripple so stop
                 self._ripple_thread.disable()

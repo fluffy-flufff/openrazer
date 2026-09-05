@@ -20,7 +20,7 @@ def set_logo_static(self, red, green, blue):
     self.logger.debug("DBus call set_static_effect")
 
     # Notify others
-    self.send_effect_event('setStatic', red, green, blue)
+    self.send_effect_event('logo', 'setStatic', red, green, blue)
 
     # remember effect
     self.set_persistence("logo", "effect", 'static')
@@ -42,7 +42,7 @@ def set_logo_spectrum(self):
     self.logger.debug("DBus call set_logo_spectrum")
 
     # Notify others
-    self.send_effect_event('setSpectrum')
+    self.send_effect_event('logo', 'setSpectrum')
 
     # remember effect
     self.set_persistence("logo", "effect", 'spectrum')
@@ -61,7 +61,7 @@ def set_logo_none(self):
     self.logger.debug("DBus call set_none_effect")
 
     # Notify others
-    self.send_effect_event('setNone')
+    self.send_effect_event('logo', 'setNone')
 
     # remember effect
     self.set_persistence("logo", "effect", 'none')
@@ -80,7 +80,7 @@ def set_logo_on(self):
     self.logger.debug("DBus call set_logo_on")
 
     # Notify others
-    self.send_effect_event('setOn')
+    self.send_effect_event('logo', 'setOn')
 
     # remember effect
     self.set_persistence("logo", "effect", 'on')
@@ -113,7 +113,7 @@ def set_logo_reactive(self, red, green, blue, speed):
     driver_path = self.get_driver_path('logo_matrix_effect_reactive')
 
     # Notify others
-    self.send_effect_event('setReactive', red, green, blue, speed)
+    self.send_effect_event('logo', 'setReactive', red, green, blue, speed)
 
     # remember effect
     self.set_persistence("logo", "effect", 'reactive')
@@ -137,7 +137,7 @@ def set_logo_breath_mono(self):
     self.logger.debug("DBus call set_logo_breath_mono")
 
     # Notify others
-    self.send_effect_event('setBreathMono')
+    self.send_effect_event('logo', 'setBreathMono')
 
     # remember effect
     self.set_persistence("logo", "effect", 'breathMono')
@@ -156,7 +156,7 @@ def set_logo_breath_random(self):
     self.logger.debug("DBus call set_breath_random_effect")
 
     # Notify others
-    self.send_effect_event('setBreathRandom')
+    self.send_effect_event('logo', 'setBreathRandom')
 
     # remember effect
     self.set_persistence("logo", "effect", 'breathRandom')
@@ -186,7 +186,7 @@ def set_logo_breath_single(self, red, green, blue):
     self.logger.debug("DBus call set_breath_single_effect")
 
     # Notify others
-    self.send_effect_event('setBreathSingle', red, green, blue)
+    self.send_effect_event('logo', 'setBreathSingle', red, green, blue)
 
     # remember effect
     self.set_persistence("logo", "effect", 'breathSingle')
@@ -226,7 +226,7 @@ def set_logo_breath_dual(self, red1, green1, blue1, red2, green2, blue2):
     self.logger.debug("DBus call set_breath_dual_effect")
 
     # Notify others
-    self.send_effect_event('setBreathDual', red1, green1, blue1, red2, green2, blue2)
+    self.send_effect_event('logo', 'setBreathDual', red1, green1, blue1, red2, green2, blue2)
 
     # remember effect
     self.set_persistence("logo", "effect", 'breathDual')
@@ -257,7 +257,7 @@ def set_logo_blinking(self, red, green, blue):
     self.logger.debug("DBus call set_logo_blinking")
 
     # Notify others
-    self.send_effect_event('setBlinking', red, green, blue)
+    self.send_effect_event('logo', 'setBlinking', red, green, blue)
 
     # remember effect
     self.set_persistence("logo", "effect", 'blinking')
@@ -288,7 +288,7 @@ def set_scroll_static(self, red, green, blue):
     self.logger.debug("DBus call set_static_effect")
 
     # Notify others
-    self.send_effect_event('setStatic', red, green, blue)
+    self.send_effect_event('scroll', 'setStatic', red, green, blue)
 
     # remember effect
     self.set_persistence("scroll", "effect", 'static')
@@ -310,7 +310,7 @@ def set_scroll_spectrum(self):
     self.logger.debug("DBus call set_scroll_spectrum")
 
     # Notify others
-    self.send_effect_event('setSpectrum')
+    self.send_effect_event('scroll', 'setSpectrum')
 
     self.set_persistence("scroll", "effect", 'spectrum')
 
@@ -328,7 +328,7 @@ def set_scroll_none(self):
     self.logger.debug("DBus call set_none_effect")
 
     # Notify others
-    self.send_effect_event('setNone')
+    self.send_effect_event('scroll', 'setNone')
 
     self.set_persistence("scroll", "effect", 'none')
 
@@ -346,7 +346,7 @@ def set_scroll_on(self):
     self.logger.debug("DBus call set_scroll_on")
 
     # Notify others
-    self.send_effect_event('setOn')
+    self.send_effect_event('scroll', 'setOn')
 
     self.set_persistence("scroll", "effect", 'on')
 
@@ -378,7 +378,7 @@ def set_scroll_reactive(self, red, green, blue, speed):
     driver_path = self.get_driver_path('scroll_matrix_effect_reactive')
 
     # Notify others
-    self.send_effect_event('setReactive', red, green, blue, speed)
+    self.send_effect_event('scroll', 'setReactive', red, green, blue, speed)
 
     # remember effect
     self.set_persistence("scroll", "effect", 'reactive')
@@ -402,7 +402,7 @@ def set_scroll_breath_mono(self):
     self.logger.debug("DBus call set_scroll_breath_mono")
 
     # Notify others
-    self.send_effect_event('setBreathMono')
+    self.send_effect_event('scroll', 'setBreathMono')
 
     # remember effect
     self.set_persistence("scroll", "effect", 'breathMono')
@@ -421,7 +421,7 @@ def set_scroll_breath_random(self):
     self.logger.debug("DBus call set_breath_random_effect")
 
     # Notify others
-    self.send_effect_event('setBreathRandom')
+    self.send_effect_event('scroll', 'setBreathRandom')
 
     # remember effect
     self.set_persistence("scroll", "effect", 'breathRandom')
@@ -451,7 +451,7 @@ def set_scroll_breath_single(self, red, green, blue):
     self.logger.debug("DBus call set_breath_single_effect")
 
     # Notify others
-    self.send_effect_event('setBreathSingle', red, green, blue)
+    self.send_effect_event('scroll', 'setBreathSingle', red, green, blue)
 
     # remember effect
     self.set_persistence("scroll", "effect", 'breathSingle')
@@ -491,7 +491,7 @@ def set_scroll_breath_dual(self, red1, green1, blue1, red2, green2, blue2):
     self.logger.debug("DBus call set_breath_dual_effect")
 
     # Notify others
-    self.send_effect_event('setBreathDual', red1, green1, blue1, red2, green2, blue2)
+    self.send_effect_event('scroll', 'setBreathDual', red1, green1, blue1, red2, green2, blue2)
 
     # remember effect
     self.set_persistence("scroll", "effect", 'breathDual')
@@ -522,7 +522,7 @@ def set_scroll_blinking(self, red, green, blue):
     self.logger.debug("DBus call set_scroll_blinking")
 
     # Notify others
-    self.send_effect_event('setBlinking', red, green, blue)
+    self.send_effect_event('scroll', 'setBlinking', red, green, blue)
 
     # remember effect
     self.set_persistence("scroll", "effect", 'blinking')

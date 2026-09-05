@@ -48,7 +48,7 @@ def _set_channel_brightness(self, channel, brightness):
         driver_file.write(str(brightness))
 
     # Notify others
-    self.send_effect_event('setBrightness', brightness)
+    self.send_effect_event(channel, 'setBrightness', brightness)
 
 
 @endpoint('razer.device.lighting.channel', 'setChannelBrightness', in_sig='qd')
@@ -105,7 +105,7 @@ def _set_channel_size(self, channel, size):
         driver_file.write(str(size))
 
     # Notify others
-    self.send_effect_event('setSize', size)
+    self.send_effect_event(channel, 'setSize', size)
 
 
 @endpoint('razer.device.lighting.channel', 'setChannelSize', in_sig='qi')

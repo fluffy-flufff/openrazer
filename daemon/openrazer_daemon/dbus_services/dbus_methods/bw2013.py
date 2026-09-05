@@ -22,7 +22,7 @@ def bw_set_pulsate(self):  # TODO: Replace by set*BreathMono
         driver_file.write('1')
 
     # Notify others
-    self.send_effect_event('setPulsate')
+    self.send_effect_event('backlight', 'setPulsate')
 
 
 @endpoint('razer.device.lighting.bw2013', 'setStatic')
@@ -41,4 +41,4 @@ def bw_set_static(self):  # TODO: Replace by set*On
         driver_file.write('1')
 
     # Notify others
-    self.send_effect_event('setStatic')
+    self.send_effect_event('backlight', 'setStatic')

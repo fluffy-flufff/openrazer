@@ -606,13 +606,13 @@ class KeyboardKeyManager(object):
         """
         if not isinstance(msg, tuple):
             self._logger.warning("Got msg that was not a tuple")
-        elif msg[0] == 'effect':
+        elif msg[0] == 'effect' and msg[2] == 'backlight':
             # We have a message directed at us
             # MSG format
-            #  0         1       2             3
-            # ('effect', Device, 'effectName', 'effectparams'...)
+            #  0         1       2       3             4
+            # ('effect', Device, 'zone', 'effectName', 'effectparams'...)
             # Device is the device the msg originated from (could be parent device)
-            if msg[2] != 'setRipple':
+            if msg[3] != 'setRipple':
                 # If we are not doing ripple effect then disable the storing of keys
                 # self.temp_key_store_state = False
                 pass

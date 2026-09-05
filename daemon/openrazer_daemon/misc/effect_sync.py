@@ -35,12 +35,12 @@ class EffectSync(object):
         elif msg[0] == 'effect':
             # We have a message directed at us
             # MSG format
-            #  0         1       2             3
-            # ('effect', Device, 'effectName', 'effectparams'...)
+            #  0         1       2       3             4
+            # ('effect', Device, 'zone', 'effectName', 'effectparams'...)
             # Device is the device the msg originated from (could be parent device)
             if msg[1] is not self._parent:
                 # Msg from another device
-                self.run_effect(msg[2], *msg[3:])
+                self.run_effect(msg[3], *msg[4:])
 
     def run_effect(self, effect_name, *args):
         """
