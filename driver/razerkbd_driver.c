@@ -498,8 +498,9 @@ static int __must_check razer_send_payload_attempts(struct razer_kbd_device *dev
             goto retry;
         }
 
-        /* Check the packet number, class and command are the same */
-        if (response->remaining_packets != request->remaining_packets ||
+        /* Blade thermal replies do not mirror remaining_packets. */
+        if ((!strict &&
+             response->remaining_packets != request->remaining_packets) ||
             response->command_class != request->command_class ||
             response->command_id.id != request->command_id.id ||
             (strict && response->transaction_id.id != request->transaction_id.id)) {
