@@ -41,6 +41,9 @@ class RazerDevice(DBusService):
     POLL_RATES: Optional[list[int]] = None
     DPI_MAX: Optional[int] = None
     DRIVER_MODE = False
+    MATRIX_LAYOUTS = None
+    SOFTWARE_WHEEL = False
+    CUSTOM_FRAME_EFFECT_ONCE = False
 
     WAVE_DIRS = (1, 2)
 

@@ -7,6 +7,7 @@ import re
 
 from openrazer_daemon.hardware.device_base import RazerDeviceBrightnessSuspend as _RazerDeviceBrightnessSuspend
 from openrazer_daemon.misc.key_event_management import KeyboardKeyManager as _KeyboardKeyManager, GamepadKeyManager as _GamepadKeyManager, OrbweaverKeyManager as _OrbweaverKeyManager
+from openrazer_daemon.misc.matrix_effects import BLADE_PRO_EARLY_2020_LAYOUTS, select_matrix_layout
 from openrazer_daemon.misc.ripple_effect import RippleManager as _RippleManager
 
 
@@ -45,13 +46,32 @@ class _RippleKeyboard(_MacroKeyboard):
     """
 
     def __init__(self, *args, **kwargs):
+        self._custom_frame_effect_selected = False
         super().__init__(*args, **kwargs)
 
         if not self.HAS_MATRIX:
             # You can use _MacroKeyboard instead if the keyboard doesn't support matrix
             raise RuntimeError("Cannot use RippleKeyboard without matrix capabilities")
 
+        self.matrix_layout = None
+        if self.MATRIX_LAYOUTS is not None:
+            try:
+                layout_name = self.getKeyboardLayout()
+            except OSError:
+                layout_name = 'unknown'
+
+            self.matrix_layout = select_matrix_layout(self.MATRIX_LAYOUTS, layout_name)
+            self.key_manager.KEY_MAP = self.matrix_layout.key_positions
+            if self.matrix_layout.event_mapping:
+                self.key_manager.EVENT_MAP = dict(self.key_manager.EVENT_MAP)
+                self.key_manager.EVENT_MAP.update(self.matrix_layout.event_mapping)
+
         self.ripple_manager = _RippleManager(self, self._device_number)
+        self._restore_software_effect()
+
+    def _restore_software_effect(self):
+        if not self.config.getboolean('Startup', 'restore_persistence'):
+            return
 
         # we need to set the effect to ripple (if needed) after the ripple manager has started
         # otherwise it doesn't work
@@ -64,6 +84,46 @@ class _RippleKeyboard(_MacroKeyboard):
                     effect_func(self.zone["backlight"]["colors"][0], self.zone["backlight"]["colors"][1], self.zone["backlight"]["colors"][2], self.ripple_manager._ripple_thread._refresh_rate)
                 elif effect_func_name == 'setRippleRandomColour':
                     effect_func(self.ripple_manager._ripple_thread._refresh_rate)
+        elif self.zone["backlight"]["effect"] == "wheel" and self.SOFTWARE_WHEEL:
+            self.setWheel(self.zone["backlight"]["wave_dir"])
+
+    def _set_custom_effect(self):
+        super()._set_custom_effect()
+        self._custom_frame_effect_selected = True
+
+    def _ensure_custom_frame_effect(self):
+        if not self._custom_frame_effect_selected:
+            self._set_custom_effect()
+
+    def _invalidate_custom_frame_effect(self):
+        self._custom_frame_effect_selected = False
+
+    def suspend_device(self):
+        self.ripple_manager.suspend('device')
+        return super().suspend_device()
+
+    def resume_device(self):
+        try:
+            return super().resume_device()
+        finally:
+            self.ripple_manager.resume('device')
+
+    def disable_lighting(self):
+        self.ripple_manager.suspend('lighting')
+
+        disable_lighting = getattr(super(), 'disable_lighting', None)
+        if disable_lighting is None:
+            return super().suspend_device()
+        return disable_lighting()
+
+    def restore_lighting(self):
+        try:
+            restore_lighting = getattr(super(), 'restore_lighting', None)
+            if restore_lighting is None:
+                return super().resume_device()
+            return restore_lighting()
+        finally:
+            self.ripple_manager.resume('lighting')
 
     def _close(self):
         super()._close()
@@ -1823,7 +1883,10 @@ class RazerBladeProEarly2020(_RippleKeyboard):
     USB_PID = 0x0256
     HAS_MATRIX = True
     MATRIX_DIMS = [6, 16]
-    METHODS = ['get_device_type_keyboard', 'get_logo_active', 'set_logo_active', 'set_wave_effect', 'set_static_effect', 'set_spectrum_effect',
+    MATRIX_LAYOUTS = BLADE_PRO_EARLY_2020_LAYOUTS
+    SOFTWARE_WHEEL = True
+    CUSTOM_FRAME_EFFECT_ONCE = True
+    METHODS = ['get_device_type_keyboard', 'get_logo_active', 'set_logo_active', 'set_wave_effect', 'set_wheel_effect', 'set_static_effect', 'set_spectrum_effect',
                'set_reactive_effect', 'set_none_effect', 'set_custom_effect', 'set_key_row',
                'set_ripple_effect', 'set_ripple_effect_random_colour']
 

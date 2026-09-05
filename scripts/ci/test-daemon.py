@@ -84,6 +84,20 @@ def test_sysfs_consistency(d):
         if found_capability and not found_sysfs:
             _test_failed(d.name, str(hex(d._pid)) + " Has one of these capabilities {} but none of these sysfs files: {}".format(capabilities, sysfs_names))
 
+    def check_wheel_sysfs():
+        if d._pid != 0x0256:
+            check_sysfs("lighting_wheel", "matrix_effect_wheel")
+            return
+
+        custom_frame = glob.glob(f"{daemon_test_dir}/*:{vid}:{pid}*/matrix_custom_frame", recursive=True)
+        custom_effect = glob.glob(f"{daemon_test_dir}/*:{vid}:{pid}*/matrix_effect_custom", recursive=True)
+
+        if not d.has("lighting_wheel"):
+            _test_failed(d.name, str(hex(d._pid)) + " Has software Wheel support but no wheel capability")
+
+        if not custom_frame or not custom_effect:
+            _test_failed(d.name, str(hex(d._pid)) + " Has software Wheel support but no custom frame sysfs files")
+
     # check_sysfs("battery", "charge_effect") # FIXME this is not correct, as per PR comments
     check_sysfs("set_low_battery_threshold", "charge_low_threshold")  # deprecated
     check_sysfs("low_battery_threshold", "charge_low_threshold")
@@ -121,7 +135,7 @@ def test_sysfs_consistency(d):
     if d._pid not in [0x010d, 0x010e, 0x0113, 0x0118, 0x011a, 0x011b, 0x011c, 0x0202]:
         check_sysfs("lighting_static", "matrix_effect_static")
     check_sysfs("lighting_wave", "matrix_effect_wave")
-    check_sysfs("lighting_wheel", "matrix_effect_wheel")
+    check_wheel_sysfs()
     check_sysfs("lighting_pulsate", "matrix_effect_pulsate")
     check_sysfs("lighting_blinking", "matrix_effect_blinking")
 

@@ -258,6 +258,9 @@ def set_wheel_effect(self, direction):
     """
     self.logger.debug("DBus call set_wheel_effect")
 
+    if self.SOFTWARE_WHEEL and direction not in (1, 2):
+        direction = 1
+
     # Notify others
     self.send_effect_event('setWheel', direction)
 
@@ -265,6 +268,9 @@ def set_wheel_effect(self, direction):
     # TODO: Add wheel_dir field handling instead!
     self.set_persistence("backlight", "effect", 'wheel')
     self.set_persistence("backlight", "wave_dir", int(direction))
+
+    if self.SOFTWARE_WHEEL:
+        return
 
     driver_path = self.get_driver_path('matrix_effect_wheel')
 
