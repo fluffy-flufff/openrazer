@@ -412,6 +412,8 @@ static int __must_check razer_send_payload_no_response(struct razer_kbd_device *
     /* Except the caller to have set the transaction_id */
     WARN_ON(request->transaction_id.id == 0x00);
 
+    request->crc = razer_calculate_crc(request);
+
     razer_get_report_params(usb_dev, &report_index, &response_index, &wait);
 
     mutex_lock(&device->lock);
