@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 
+import threading
 import unittest
 import unittest.mock
 
@@ -16,6 +17,8 @@ class DummyDevice(object):
 
 
 class DummyRippleParent(object):
+    CUSTOM_FRAME_EFFECT_ONCE = False
+
     def __init__(self):
         self.key_manager = unittest.mock.MagicMock()
         self.key_manager.temp_key_store_state = False
@@ -39,6 +42,9 @@ class EffectNotificationTest(unittest.TestCase):
         self.ripple_manager._logger = unittest.mock.MagicMock()
         self.ripple_manager._parent = self.parent
         self.ripple_manager._ripple_thread = DummyRippleThread()
+        self.ripple_manager._wheel_thread = None
+        self.ripple_manager._suspend_reasons = set()
+        self.ripple_manager._frame_lock = threading.Lock()
         self.ripple_manager._is_closed = True
 
     def test_effect_event_includes_zone(self):

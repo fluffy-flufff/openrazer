@@ -16,6 +16,8 @@ layout_ids = {
     "05": "ru_RU",
     "06": "en_GB",
     "07": "Nordic",
+    "08": "zh_TW",
+    "09": "ko_KR",
     "0a": "tr_TR",
     "0c": "ja_JP",
     "0f": "de_CH",
