@@ -4,6 +4,7 @@
 Hardware base class
 """
 import configparser
+from contextlib import contextmanager
 import re
 import os
 import types
@@ -66,6 +67,8 @@ class RazerDevice(DBusService):
         self._effect_sync_propagate_up = False
         self._disable_notifications = False
         self._disable_persistence = False
+        self._effect_restore_zones = set()
+        self._persisted_effect_state = {}
         self.additional_interfaces = []
         if additional_interfaces is not None:
             self.additional_interfaces.extend(additional_interfaces)
@@ -266,14 +269,26 @@ class RazerDevice(DBusService):
                 except (KeyError, configparser.NoOptionError):
                     self.logger.info("Failed to get poll rate from persistence storage, using default.")
 
+        restore_persistence = self.config.getboolean('Startup', "restore_persistence")
+
         # load last effects
         for i in self.ZONES:
             if self.zone[i]["present"]:
                 # check if we have the device in the persistence file
                 if self.persistence.has_section(self.storage_name):
+                    effect_state = self.zone[i]
+                    if not restore_persistence:
+                        effect_state = {
+                            "effect": self.zone[i]["effect"],
+                            "colors": list(self.zone[i]["colors"]),
+                            "speed": self.zone[i]["speed"],
+                            "wave_dir": self.zone[i]["wave_dir"],
+                        }
+                        self._persisted_effect_state[i] = effect_state
+
                     # try reading the effect name from the persistence
                     try:
-                        self.zone[i]["effect"] = self.persistence[self.storage_name][i + '_effect']
+                        effect_state["effect"] = self.persistence[self.storage_name][i + '_effect']
                     except (KeyError, configparser.NoOptionError):
                         self.logger.info("Failed to get " + i + " effect from persistence storage, using default.")
 
@@ -292,31 +307,28 @@ class RazerDevice(DBusService):
                     # colors.
                     # these are stored as a string that must contain 9 numbers, separated with spaces.
                     try:
-                        for index, item in enumerate(self.persistence[self.storage_name][i + '_colors'].split(" ")):
-                            self.zone[i]["colors"][index] = int(item)
-                            # check if the color is in range
-                            if not 0 <= self.zone[i]["colors"][index] <= 255:
-                                raise ValueError('Color out of range')
-
-                        # check if we have exactly 9 colors
-                        if len(self.zone[i]["colors"]) != 9:
+                        colors = [int(item) for item in self.persistence[self.storage_name][i + '_colors'].split(" ")]
+                        if len(colors) != 9:
                             raise ValueError('There must be exactly 9 colors')
+                        if any(color < 0 or color > 255 for color in colors):
+                            raise ValueError('Color out of range')
+                        effect_state["colors"] = colors
                     except ValueError:
                         # invalid colors. reinitialize
-                        self.zone[i]["colors"] = [0, 255, 0, 0, 255, 255, 0, 0, 255]
+                        effect_state["colors"] = [0, 255, 0, 0, 255, 255, 0, 0, 255]
                         self.logger.info("%s: Invalid colors; restoring to defaults.", self.__class__.__name__)
                     except (KeyError, configparser.NoOptionError):
                         self.logger.info("Failed to get " + i + " colors from persistence storage, using default.")
 
                     # speed
                     try:
-                        self.zone[i]["speed"] = int(self.persistence[self.storage_name][i + '_speed'])
+                        effect_state["speed"] = int(self.persistence[self.storage_name][i + '_speed'])
                     except (KeyError, configparser.NoOptionError):
                         self.logger.info("Failed to get " + i + " speed from persistence storage, using default.")
 
                     # wave direction
                     try:
-                        self.zone[i]["wave_dir"] = int(self.persistence[self.storage_name][i + '_wave_dir'])
+                        effect_state["wave_dir"] = int(self.persistence[self.storage_name][i + '_wave_dir'])
                     except (KeyError, configparser.NoOptionError):
                         self.logger.info("Failed to get " + i + " wave direction from persistence storage, using default.")
 
@@ -336,15 +348,32 @@ class RazerDevice(DBusService):
             self.set_device_mode(0x03, 0x00)  # Driver mode
 
         self.restore_dpi_poll_rate()
-        self.restore_brightness()
 
-        if self.config.getboolean('Startup', "restore_persistence") is True:
-            self.restore_effect()
+        if restore_persistence:
+            self._effect_restore_zones.update(i for i in self.ZONES if self.zone[i]["present"])
+        elif self.DRIVER_MODE and self.zone["backlight"]["present"]:
+            fallback_effects = (
+                ('spectrum', 'setSpectrum'),
+                ('static', 'setStatic'),
+                ('on', 'setOn'),
+            )
+            for effect, method_name in fallback_effects:
+                if getattr(self, method_name, None) is not None:
+                    self.zone["backlight"]["effect"] = effect
+                    self._effect_restore_zones.add("backlight")
+                    break
 
-            # Some devices need setting a second time after encountering Razer Synapse on Windows
-            if self.config.getboolean('Startup', "persistence_dual_boot_quirk") is True:
-                self.logger.debug("Restoring effect persistence again (dual boot quirk)")
-                self.restore_effect()
+        with self._suppress_state_updates():
+            try:
+                self._restore_effects(self._effect_restore_zones)
+
+                if restore_persistence:
+                    # Some devices need setting a second time after encountering Razer Synapse on Windows
+                    if self.config.getboolean('Startup', "persistence_dual_boot_quirk") is True:
+                        self.logger.debug("Restoring effect persistence again (dual boot quirk)")
+                        self._restore_effects(self._effect_restore_zones)
+            finally:
+                self.restore_brightness()
 
     def send_effect_event(self, effect_name, *args):
         """
@@ -407,6 +436,7 @@ class RazerDevice(DBusService):
 
         This is used at launch time.
         """
+        successful = True
         for i in self.ZONES:
             if self.zone[i]["present"]:
                 # load active state
@@ -426,7 +456,9 @@ class RazerDevice(DBusService):
                     try:
                         bright_func(self.zone[i]["brightness"])
                     except OSError:
+                        successful = False
                         self.logger.exception("Failed to restore brightness!")
+        return successful
 
     def disable_brightness(self):
         """
@@ -450,6 +482,38 @@ class RazerDevice(DBusService):
                 if bright_func is not None:
                     bright_func(0)
 
+    @contextmanager
+    def _suppress_state_updates(self):
+        disable_notify = self.disable_notify
+        disable_persistence = self.disable_persistence
+        self.disable_notify = True
+        self.disable_persistence = True
+        try:
+            yield
+        finally:
+            self.disable_notify = disable_notify
+            self.disable_persistence = disable_persistence
+
+    def disable_lighting(self):
+        """
+        Temporarily turn off device lighting.
+        """
+        self.logger.info("Turning off lighting for %s", self.__class__.__name__)
+        with self._suppress_state_updates():
+            self.disable_brightness()
+            self._disable_lighting()
+        return True
+
+    def restore_lighting(self):
+        """
+        Restore lighting after a temporary shutdown.
+        """
+        self.logger.info("Restoring lighting for %s", self.__class__.__name__)
+        with self._suppress_state_updates():
+            successful = self.restore_brightness()
+            self._restore_lighting()
+        return successful is not False
+
     def restore_effect(self):
         """
         Set the device to the current effect
@@ -457,8 +521,11 @@ class RazerDevice(DBusService):
         This is used at launch time and can be called by applications
         that use custom matrix frames after they exit
         """
+        self._restore_effects(self.ZONES)
+
+    def _restore_effects(self, zones):
         for i in self.ZONES:
-            if self.zone[i]["present"]:
+            if i in zones and self.zone[i]["present"]:
                 # prepare the effect method name
                 # yes, we need to handle the backlight zone separately too.
                 # the backlight effect methods don't have a prefix.
@@ -544,8 +611,15 @@ class RazerDevice(DBusService):
 
         if zone:
             self.zone[zone][key] = value
+            if key in ("effect", "colors", "speed", "wave_dir"):
+                self._persisted_effect_state.pop(zone, None)
+            if key == "effect":
+                self._effect_restore_zones.add(zone)
         else:
             self.zone[key] = value
+
+    def get_persistence_effect_state(self, zone):
+        return self._persisted_effect_state.get(zone, self.zone[zone])
 
     def get_current_effect(self):
         """
@@ -1153,39 +1227,49 @@ class RazerDevice(DBusService):
         Suspend device
         """
         self.logger.info("Suspending %s", self.__class__.__name__)
-        self.disable_notify = True
-        self.disable_persistence = True
-
-        self.disable_brightness()
-        self._suspend_device()
-
-        self.disable_notify = False
-        self.disable_persistence = False
+        with self._suppress_state_updates():
+            self.disable_brightness()
+            self._disable_lighting()
+            self._suspend_device()
 
     def resume_device(self):
         """
         Resume device
         """
         self.logger.info("Resuming %s", self.__class__.__name__)
-        self.disable_notify = True
-        self.disable_persistence = True
+        successful = True
+        with self._suppress_state_updates():
+            if self.DRIVER_MODE:
+                self.logger.info('Setting device back to "driver" mode.')
+                try:
+                    self.set_device_mode(0x03, 0x00)  # Driver mode
+                except OSError as error:
+                    successful = False
+                    self.logger.warning('Failed to restore "driver" mode (%s). Continuing resume.', error)
 
-        # Set device back to driver mode after e.g. suspend which resets the
-        # device to default device mode.
-        # NOTE: This is really the wrong place to put this, since this callback
-        # is for screensaver unlock, and not for 'wake up from suspend' or
-        # similar. Nevertheless for now this seems to be the best place for
-        # this and should resolve some issues with macro keys not working after
-        # suspend.
-        if self.DRIVER_MODE:
-            self.logger.info('Setting device back to "driver" mode.')
-            self.set_device_mode(0x03, 0x00)  # Driver mode
+            try:
+                self._resume_device()
+                restored_zones = self._restore_lighting() or set()
+                effect_zones = set(self._effect_restore_zones) - set(restored_zones)
+                self._restore_effects(effect_zones)
+            finally:
+                if self.restore_brightness() is False:
+                    successful = False
+        return successful
 
-        self.restore_brightness()
-        self._resume_device()
+    def _disable_lighting(self):
+        """
+        Override to implement custom lighting shutdown behavior
+        """
 
-        self.disable_notify = False
-        self.disable_persistence = False
+    def _restore_lighting(self):
+        """
+        Override to implement custom lighting restore behavior
+
+        :return: Zones restored by the hook
+        :rtype: set
+        """
+        return set()
 
     def _suspend_device(self):
         """

@@ -28,6 +28,7 @@ import openrazer_daemon.hardware
 from openrazer_daemon.dbus_services.service import DBusService
 from openrazer_daemon.device import DeviceCollection
 from openrazer_daemon.misc.screensaver_monitor import ScreensaverMonitor
+from openrazer_daemon.misc.system_sleep_monitor import SystemSleepMonitor
 from openrazer_daemon.misc.autosave_persistence import PersistenceAutoSave
 
 
@@ -112,11 +113,12 @@ class RazerDaemon(DBusService):
 
         # Load Classes
         self._device_classes = openrazer_daemon.hardware.get_device_classes()
+        self._razer_devices = DeviceCollection()
 
         self.logger.info("Initialising Daemon (v%s). Pid: %d", __version__, os.getpid())
         self._init_screensaver_monitor()
+        self._init_system_sleep_monitor()
 
-        self._razer_devices = DeviceCollection()
         self._load_devices(first_run=True)
 
         # Add DBus methods
@@ -214,6 +216,13 @@ class RazerDaemon(DBusService):
             self._screensaver_monitor.monitoring = self._config.getboolean('Startup', 'devices_off_on_screensaver')
         except dbus.exceptions.DBusException as e:
             self.logger.error("Failed to init ScreensaverMonitor: {}".format(e))
+
+    def _init_system_sleep_monitor(self):
+        self._system_sleep_monitor = None
+        try:
+            self._system_sleep_monitor = SystemSleepMonitor(self)
+        except dbus.exceptions.DBusException as e:
+            self.logger.error("Failed to init SystemSleepMonitor: {}".format(e))
 
     def _init_autosave_persistence(self):
         if not self._persistence:
@@ -340,12 +349,13 @@ class RazerDaemon(DBusService):
 
             for i in device.dbus.ZONES:
                 if device.dbus.zone[i]["present"]:
+                    effect_state = device.dbus.get_persistence_effect_state(i)
                     self._persistence[device.dbus.storage_name][i + '_active'] = str(device.dbus.zone[i]["active"])
                     self._persistence[device.dbus.storage_name][i + '_brightness'] = str(device.dbus.zone[i]["brightness"])
-                    self._persistence[device.dbus.storage_name][i + '_effect'] = device.dbus.zone[i]["effect"]
-                    self._persistence[device.dbus.storage_name][i + '_colors'] = ' '.join(str(i) for i in device.dbus.zone[i]["colors"])
-                    self._persistence[device.dbus.storage_name][i + '_speed'] = str(device.dbus.zone[i]["speed"])
-                    self._persistence[device.dbus.storage_name][i + '_wave_dir'] = str(device.dbus.zone[i]["wave_dir"])
+                    self._persistence[device.dbus.storage_name][i + '_effect'] = effect_state["effect"]
+                    self._persistence[device.dbus.storage_name][i + '_colors'] = ' '.join(str(i) for i in effect_state["colors"])
+                    self._persistence[device.dbus.storage_name][i + '_speed'] = str(effect_state["speed"])
+                    self._persistence[device.dbus.storage_name][i + '_wave_dir'] = str(effect_state["wave_dir"])
 
         with open(persistence_file, 'w') as cf:
             self._persistence.write(cf)
@@ -383,15 +393,43 @@ class RazerDaemon(DBusService):
         """
         Suspend all devices
         """
-        for device in self._razer_devices:
-            device.dbus.suspend_device()
+        return self._run_device_action('suspend_device')
 
     def resume_devices(self):
         """
         Resume all devices
         """
-        for device in self._razer_devices:
-            device.dbus.resume_device()
+        successful = True
+        try:
+            successful = self._run_device_action('resume_device')
+        finally:
+            screensaver_monitor = getattr(self, '_screensaver_monitor', None)
+            if screensaver_monitor is not None and screensaver_monitor.reapply_lighting() is False:
+                successful = False
+        return successful
+
+    def disable_lighting(self):
+        """
+        Temporarily turn off lighting for all devices
+        """
+        return self._run_device_action('disable_lighting')
+
+    def restore_lighting(self):
+        """
+        Restore lighting for all devices
+        """
+        return self._run_device_action('restore_lighting')
+
+    def _run_device_action(self, method_name):
+        successful = True
+        for device in list(self._razer_devices):
+            try:
+                if getattr(device.dbus, method_name)() is False:
+                    successful = False
+            except OSError as error:
+                successful = False
+                self.logger.warning("Failed to run %s for %s: %s", method_name, device.serial, error)
+        return successful
 
     def get_serial_list(self):
         """
@@ -634,7 +672,7 @@ class RazerDaemon(DBusService):
 
     def quit(self, signum):
         """
-        Quit by stopping the main loop, observer, and screensaver thread
+        Quit by stopping the main loop and observer
         """
         # pylint: disable=unused-argument
         if signum is None:
@@ -642,9 +680,13 @@ class RazerDaemon(DBusService):
         else:
             self.logger.info('Stopping daemon on signal %d', signum)
 
-        # "Resume" all devices, in case they're still "suspended"
-        # (lights off because of screensaver)
-        self.resume_devices()
+        screensaver_monitor = getattr(self, '_screensaver_monitor', None)
+        if screensaver_monitor is not None:
+            screensaver_monitor.restore_lighting()
+
+        system_sleep_monitor = getattr(self, '_system_sleep_monitor', None)
+        if system_sleep_monitor is not None:
+            system_sleep_monitor.close()
 
         self._main_loop.quit()
 

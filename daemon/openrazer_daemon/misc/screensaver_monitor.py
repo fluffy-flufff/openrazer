@@ -28,18 +28,19 @@ class ScreensaverMonitor(object):
         self._parent = parent
         self._monitoring = True
         self._active = None
+        self._lighting_disabled = False
+        self._lighting_retry = False
 
-        self._dbus_instances = []
         # Get session bus
-        bus = dbus.SessionBus()
+        self._bus = dbus.SessionBus()
         # Loop through and monitor the signals
         for screensaver_interface in DBUS_SCREENSAVER_INTERFACES:
-            bus.add_signal_receiver(self.signal_callback, dbus_interface=screensaver_interface, signal_name='ActiveChanged')
+            self._bus.add_signal_receiver(self.signal_callback, dbus_interface=screensaver_interface, signal_name='ActiveChanged')
 
     @property
     def monitoring(self):
         """
-        Monitoring property, if true then suspend/resume will be actioned.
+        Monitoring property, if true then lighting will follow screensaver state.
 
         :return: If monitoring
         :rtype: bool
@@ -49,26 +50,54 @@ class ScreensaverMonitor(object):
     @monitoring.setter
     def monitoring(self, value):
         """
-        Monitoring property setter, if true then suspend/resume will be actioned.
+        Monitoring property setter.
 
         :param value: If monitoring
         :type: bool
         """
-        self._monitoring = bool(value)
+        value = bool(value)
+        self._monitoring = value
+        if self._monitoring and self._active:
+            self.disable_lighting()
+        elif not self._monitoring:
+            self.restore_lighting()
 
-    def suspend(self):
+    def disable_lighting(self, force=False):
         """
-        Suspend the device
+        Turn off device lighting
         """
+        if self._lighting_disabled and not self._lighting_retry and not force:
+            return True
+
         self._logger.debug("Received screensaver active signal")
-        self._parent.suspend_devices()
+        self._lighting_disabled = True
+        self._lighting_retry = True
+        successful = self._parent.disable_lighting()
+        self._lighting_retry = successful is False
+        return not self._lighting_retry
 
-    def resume(self):
+    def restore_lighting(self):
         """
-        Resume the device
+        Restore device lighting
         """
+        if not self._lighting_disabled:
+            return True
+
         self._logger.debug("Received screensaver inactive signal")
-        self._parent.resume_devices()
+        self._lighting_retry = True
+        successful = self._parent.restore_lighting()
+        if successful is not False:
+            self._lighting_disabled = False
+            self._lighting_retry = False
+        return not self._lighting_retry
+
+    def reapply_lighting(self):
+        """
+        Keep lighting off after a device resumed.
+        """
+        if self.monitoring and self._active and self._lighting_disabled:
+            return self.disable_lighting(force=True)
+        return self.restore_lighting()
 
     def signal_callback(self, active):
         """
@@ -78,14 +107,12 @@ class ScreensaverMonitor(object):
         :type active: dbus.Boolean
         """
         active = bool(active)
+        self._active = active
+        if not self.monitoring:
+            self.restore_lighting()
+            return
 
-        if self.monitoring:
-            if active:
-                # Only trigger once per state change
-                if self._active is None or not self._active:
-                    self._active = active
-                    self.suspend()
-            else:
-                if self._active is None or self._active:
-                    self._active = active
-                    self.resume()
+        if active:
+            self.disable_lighting()
+        else:
+            self.restore_lighting()
