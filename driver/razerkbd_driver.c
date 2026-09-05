@@ -444,9 +444,10 @@ static int __must_check razer_send_payload(struct razer_kbd_device *device, stru
             goto retry;
         }
 
-        /* Some commands respond with 'busy' but succeed. Treat it as success. */
+        /* Some set commands respond with 'busy' but succeed. */
         if (response->status == RAZER_CMD_SUCCESSFUL ||
-            response->status == RAZER_CMD_BUSY)
+            (response->status == RAZER_CMD_BUSY &&
+             !(request->command_id.id & 0x80)))
             return 0;
 
 retry:
@@ -463,6 +464,8 @@ retry:
 
     /* Only "valid" but failed responses should reach this */
     switch (response->status) {
+    case RAZER_CMD_BUSY:
+        return -EBUSY;
     case RAZER_CMD_FAILURE:
         print_erroneous_report(device->hdev, response, "Command failed");
         return -EINVAL;
