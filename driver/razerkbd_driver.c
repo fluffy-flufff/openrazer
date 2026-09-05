@@ -9,9 +9,13 @@
 #include <linux/init.h>
 #include <linux/usb/input.h>
 #include <linux/hid.h>
+#include <linux/version.h>
+#if IS_REACHABLE(CONFIG_HWMON) && LINUX_VERSION_CODE >= KERNEL_VERSION(5, 2, 0)
+#include <linux/hwmon.h>
+#define RAZER_BLADE_FAN_HWMON
+#endif
 #include <linux/dmi.h>
 #include <linux/input-event-codes.h>
-#include <linux/version.h>
 
 #include "usb_hid_keys.h"
 
@@ -23,6 +27,62 @@
  * Version Information
  */
 #define DRIVER_DESC "Razer Keyboard Device Driver"
+
+#define RAZER_SEND_PAYLOAD_ATTEMPTS 5
+
+#ifdef RAZER_BLADE_FAN_HWMON
+#define RAZER_BLADE_FAN_MAX_COUNT 2
+#define RAZER_BLADE_FAN_RPM_UNIT 100
+#define RAZER_BLADE_FAN_MODE_DELAY_MS 200
+#define RAZER_BLADE_FAN_CLEANUP_ATTEMPTS 1
+#define RAZER_BLADE_FAN_HWMON_AUTO 2
+#define RAZER_BLADE_FAN_HWMON_TARGET 3
+
+#define RAZER_BLADE_FAN_CONTROL_AUTO 0
+#define RAZER_BLADE_FAN_CONTROL_MANUAL 1
+#define RAZER_BLADE_FAN_CONTROL_FORCE_AUTO 2
+#define RAZER_BLADE_FAN_PERFORMANCE_BALANCED 0
+#define RAZER_BLADE_FAN_PERFORMANCE_CUSTOM 4
+#define RAZER_BLADE_FAN_PERFORMANCE_MAX 7
+
+struct razer_blade_fan_config {
+    u8 transaction_id;
+    u8 profile_id;
+    unsigned long performance_modes;
+    u8 fan_count;
+    u8 fan_ids[RAZER_BLADE_FAN_MAX_COUNT];
+    const char *fan_labels[RAZER_BLADE_FAN_MAX_COUNT];
+    u16 min_rpm;
+    u16 default_rpm;
+    u16 max_rpm;
+    bool has_control;
+};
+
+struct razer_blade_fan {
+    struct razer_kbd_device *kbd;
+    const struct razer_blade_fan_config *config;
+    struct usb_interface *intf;
+    struct device *hwmon_dev;
+    struct mutex lock;
+    unsigned long owned_mask;
+    u8 owned_performance[RAZER_BLADE_FAN_MAX_COUNT];
+    bool suspended;
+};
+
+static const struct razer_blade_fan_config razer_blade_pro_early_2020_fan_config = {
+    .transaction_id = 0x1F,
+    .profile_id = 0x01,
+    .performance_modes = BIT(RAZER_BLADE_FAN_PERFORMANCE_BALANCED) |
+                         BIT(RAZER_BLADE_FAN_PERFORMANCE_CUSTOM),
+    .fan_count = 2,
+    .fan_ids = { 0x01, 0x02 },
+    .fan_labels = { "CPU", "GPU" },
+    .min_rpm = 2300,
+    .default_rpm = 2900,
+    .max_rpm = 4300,
+    .has_control = true,
+};
+#endif
 
 MODULE_AUTHOR(DRIVER_AUTHOR);
 MODULE_DESCRIPTION(DRIVER_DESC);
@@ -419,14 +479,17 @@ static int __must_check razer_send_payload_no_response(struct razer_kbd_device *
 /**
  * Function to send to device, get response, and actually check the response
  */
-static int __must_check razer_send_payload(struct razer_kbd_device *device, struct razer_report *request, struct razer_report *response)
+static int __must_check razer_send_payload_attempts(struct razer_kbd_device *device, struct razer_report *request, struct razer_report *response, unsigned int attempts, bool strict)
 {
-    int retry;
+    unsigned int retry;
     int err;
+
+    if (!attempts)
+        return -EINVAL;
 
     request->crc = razer_calculate_crc(request);
 
-    for (retry = 5; retry > 0; retry--) {
+    for (retry = attempts; retry > 0; retry--) {
         mutex_lock(&device->lock);
         err = razer_get_report(device->hdev, request, response);
         mutex_unlock(&device->lock);
@@ -438,20 +501,21 @@ static int __must_check razer_send_payload(struct razer_kbd_device *device, stru
         /* Check the packet number, class and command are the same */
         if (response->remaining_packets != request->remaining_packets ||
             response->command_class != request->command_class ||
-            response->command_id.id != request->command_id.id) {
+            response->command_id.id != request->command_id.id ||
+            (strict && response->transaction_id.id != request->transaction_id.id)) {
             print_erroneous_report(device->hdev, response, "Response doesn't match request");
             err = -EINVAL;
             goto retry;
         }
 
-        /* Some commands respond with 'busy' but succeed. Treat it as success. */
+        /* Some legacy commands respond with 'busy' but succeed. */
         if (response->status == RAZER_CMD_SUCCESSFUL ||
-            response->status == RAZER_CMD_BUSY)
+            (!strict && response->status == RAZER_CMD_BUSY))
             return 0;
 
 retry:
         hid_dbg(device->hdev,
-                "Sending command failed: %d, response status: %d, retries left: %d\n",
+                "Sending command failed: %d, response status: %d, retries left: %u\n",
                 err, response->status, retry);
 
         /* otherwise try again after a delay of 10ms... */
@@ -463,6 +527,8 @@ retry:
 
     /* Only "valid" but failed responses should reach this */
     switch (response->status) {
+    case RAZER_CMD_BUSY:
+        return -EBUSY;
     case RAZER_CMD_FAILURE:
         print_erroneous_report(device->hdev, response, "Command failed");
         return -EINVAL;
@@ -478,6 +544,646 @@ retry:
         return -EIO;
     }
 }
+
+static int __must_check razer_send_payload(struct razer_kbd_device *device, struct razer_report *request, struct razer_report *response)
+{
+    return razer_send_payload_attempts(device, request, response,
+                                       RAZER_SEND_PAYLOAD_ATTEMPTS, false);
+}
+
+#ifdef RAZER_BLADE_FAN_HWMON
+static int razer_blade_fan_send_payload_attempts(struct razer_blade_fan *fan,
+        struct razer_report *request,
+        struct razer_report *response,
+        unsigned int attempts)
+{
+    return razer_send_payload_attempts(fan->kbd, request, response,
+                                       attempts, true);
+}
+
+static int razer_blade_fan_send_payload(struct razer_blade_fan *fan,
+                                        struct razer_report *request,
+                                        struct razer_report *response)
+{
+    return razer_blade_fan_send_payload_attempts(
+               fan, request, response, RAZER_SEND_PAYLOAD_ATTEMPTS);
+}
+
+static struct razer_report razer_blade_fan_report(struct razer_blade_fan *fan,
+        u8 command_id, u8 data_size,
+        int channel)
+{
+    struct razer_report report = get_razer_report(0x0D, command_id, data_size);
+
+    report.transaction_id.id = fan->config->transaction_id;
+    if (channel >= 0) {
+        report.arguments[0] = fan->config->profile_id;
+        report.arguments[1] = fan->config->fan_ids[channel];
+    }
+
+    return report;
+}
+
+static int razer_blade_fan_check_response(struct razer_blade_fan *fan,
+        const struct razer_report *response,
+        u8 fan_id, u8 size)
+{
+    if (response->data_size < size ||
+        response->arguments[0] != fan->config->profile_id ||
+        response->arguments[1] != fan_id)
+        return -EPROTO;
+
+    return 0;
+}
+
+static int razer_blade_fan_get_rpm(struct razer_blade_fan *fan, int channel,
+                                   bool actual, u16 *rpm)
+{
+    struct razer_report request;
+    struct razer_report response = {0};
+    int err;
+
+    request = razer_blade_fan_report(fan, actual ? 0x88 : 0x81,
+                                     0x03, channel);
+    err = razer_blade_fan_send_payload(fan, &request, &response);
+    if (err)
+        return err;
+
+    err = razer_blade_fan_check_response(fan, &response,
+                                         fan->config->fan_ids[channel], 3);
+    if (err)
+        return err;
+
+    *rpm = response.arguments[2] * RAZER_BLADE_FAN_RPM_UNIT;
+    return 0;
+}
+
+static int razer_blade_fan_get_mode(struct razer_blade_fan *fan, int channel,
+                                    u8 *performance_mode, u8 *control_mode)
+{
+    struct razer_report request;
+    struct razer_report response = {0};
+    int err;
+
+    request = razer_blade_fan_report(fan, 0x82, 0x04, channel);
+    err = razer_blade_fan_send_payload(fan, &request, &response);
+    if (err)
+        return err;
+
+    err = razer_blade_fan_check_response(fan, &response,
+                                         fan->config->fan_ids[channel], 4);
+    if (err)
+        return err;
+    if (response.arguments[2] > RAZER_BLADE_FAN_PERFORMANCE_MAX ||
+        response.arguments[3] > RAZER_BLADE_FAN_CONTROL_FORCE_AUTO)
+        return -EPROTO;
+
+    if (performance_mode)
+        *performance_mode = response.arguments[2];
+    if (control_mode)
+        *control_mode = response.arguments[3];
+    return 0;
+}
+
+static bool razer_blade_fan_supports_performance(
+        const struct razer_blade_fan *fan, u8 performance_mode)
+{
+    return performance_mode < BITS_PER_LONG &&
+           (fan->config->performance_modes & BIT(performance_mode));
+}
+
+static int razer_blade_fan_set_speed(struct razer_blade_fan *fan, int channel,
+                                     u16 rpm)
+{
+    struct razer_report request;
+    struct razer_report response = {0};
+    int err;
+
+    request = razer_blade_fan_report(fan, 0x01, 0x03, channel);
+    request.arguments[2] = rpm / RAZER_BLADE_FAN_RPM_UNIT;
+    err = razer_blade_fan_send_payload(fan, &request, &response);
+    if (err)
+        return err;
+
+    err = razer_blade_fan_check_response(fan, &response,
+                                         fan->config->fan_ids[channel], 3);
+    if (err)
+        return err;
+    if (response.arguments[2] != request.arguments[2])
+        return -EPROTO;
+
+    return 0;
+}
+
+static int razer_blade_fan_set_mode_attempts(struct razer_blade_fan *fan,
+        int channel, u8 performance_mode, u8 control_mode,
+        unsigned int attempts)
+{
+    struct razer_report request;
+    struct razer_report response = {0};
+    int err;
+
+    request = razer_blade_fan_report(fan, 0x02, 0x04, channel);
+    request.arguments[2] = performance_mode;
+    request.arguments[3] = control_mode;
+    err = razer_blade_fan_send_payload_attempts(fan, &request, &response,
+            attempts);
+    if (err)
+        return err;
+
+    err = razer_blade_fan_check_response(fan, &response,
+                                         fan->config->fan_ids[channel], 4);
+    if (err)
+        return err;
+    if (response.arguments[2] != request.arguments[2] ||
+        response.arguments[3] != request.arguments[3])
+        return -EPROTO;
+
+    msleep(RAZER_BLADE_FAN_MODE_DELAY_MS);
+    return 0;
+}
+
+static int razer_blade_fan_set_mode(struct razer_blade_fan *fan, int channel,
+                                    u8 performance_mode, u8 control_mode)
+{
+    return razer_blade_fan_set_mode_attempts(
+               fan, channel, performance_mode, control_mode,
+               RAZER_SEND_PAYLOAD_ATTEMPTS);
+}
+
+static int razer_blade_fan_enumerate(struct razer_blade_fan *fan)
+{
+    struct razer_report request;
+    struct razer_report response = {0};
+    u8 count;
+    int err;
+    int i;
+    int j;
+
+    request = razer_blade_fan_report(fan, 0x80, 0x50, -1);
+    err = razer_blade_fan_send_payload(fan, &request, &response);
+    if (err)
+        return err;
+    if (response.data_size < 1)
+        return -EPROTO;
+
+    count = response.arguments[0];
+    if (!count || count >= ARRAY_SIZE(response.arguments) ||
+        count + 1 > response.data_size)
+        return -EPROTO;
+
+    for (i = 0; i < fan->config->fan_count; i++) {
+        for (j = 0; j < count; j++) {
+            if (response.arguments[j + 1] == fan->config->fan_ids[i])
+                break;
+        }
+        if (j == count)
+            return -ENODEV;
+    }
+
+    return 0;
+}
+
+static int razer_blade_fan_lock(struct razer_blade_fan *fan)
+{
+    int err;
+
+    err = usb_autopm_get_interface(fan->intf);
+    if (err)
+        return err;
+
+    mutex_lock(&fan->lock);
+    if (fan->suspended) {
+        mutex_unlock(&fan->lock);
+        usb_autopm_put_interface(fan->intf);
+        return -EBUSY;
+    }
+
+    return 0;
+}
+
+static void razer_blade_fan_unlock(struct razer_blade_fan *fan)
+{
+    mutex_unlock(&fan->lock);
+    usb_autopm_put_interface(fan->intf);
+}
+
+static int razer_blade_fan_return_to_auto(struct razer_blade_fan *fan,
+        unsigned int attempts)
+{
+    int first_err = 0;
+    int err;
+    int i;
+
+    for (i = 0; i < fan->config->fan_count; i++) {
+        if (!(fan->owned_mask & BIT(i)))
+            continue;
+
+        err = razer_blade_fan_set_mode_attempts(
+                  fan, i, fan->owned_performance[i],
+                  RAZER_BLADE_FAN_CONTROL_AUTO,
+                  attempts);
+        if (err) {
+            if (!first_err)
+                first_err = err;
+        } else {
+            fan->owned_mask &= ~BIT(i);
+        }
+    }
+
+    return first_err;
+}
+
+static umode_t razer_blade_fan_is_visible(const void *data,
+        enum hwmon_sensor_types type,
+        u32 attr, int channel)
+{
+    const struct razer_blade_fan *fan = data;
+
+    if (channel < 0 || channel >= fan->config->fan_count)
+        return 0;
+
+    if (type == hwmon_fan &&
+        (attr == hwmon_fan_input || attr == hwmon_fan_label))
+        return 0444;
+    if (fan->config->has_control &&
+        ((type == hwmon_fan && attr == hwmon_fan_target) ||
+         (type == hwmon_pwm && attr == hwmon_pwm_enable)))
+        return 0644;
+
+    return 0;
+}
+
+static int razer_blade_fan_read(struct device *dev,
+                                enum hwmon_sensor_types type,
+                                u32 attr, int channel, long *value)
+{
+    struct razer_blade_fan *fan = dev_get_drvdata(dev);
+    u8 control_mode;
+    u16 rpm;
+    int err;
+
+    err = razer_blade_fan_lock(fan);
+    if (err)
+        return err;
+
+    if (type == hwmon_fan && attr == hwmon_fan_input) {
+        err = razer_blade_fan_get_rpm(fan, channel, true, &rpm);
+        if (!err)
+            *value = rpm;
+    } else if (type == hwmon_fan && attr == hwmon_fan_target) {
+        err = razer_blade_fan_get_rpm(fan, channel, false, &rpm);
+        if (!err)
+            *value = rpm;
+    } else if (type == hwmon_pwm && attr == hwmon_pwm_enable) {
+        err = razer_blade_fan_get_mode(fan, channel, NULL,
+                                       &control_mode);
+        if (!err)
+            *value = control_mode == RAZER_BLADE_FAN_CONTROL_MANUAL ?
+                     RAZER_BLADE_FAN_HWMON_TARGET :
+                     RAZER_BLADE_FAN_HWMON_AUTO;
+    } else {
+        err = -EOPNOTSUPP;
+    }
+
+    razer_blade_fan_unlock(fan);
+    return err;
+}
+
+static int razer_blade_fan_read_string(struct device *dev,
+                                       enum hwmon_sensor_types type,
+                                       u32 attr, int channel,
+                                       const char **value)
+{
+    struct razer_blade_fan *fan = dev_get_drvdata(dev);
+
+    if (type != hwmon_fan || attr != hwmon_fan_label ||
+        channel < 0 || channel >= fan->config->fan_count)
+        return -EOPNOTSUPP;
+
+    *value = fan->config->fan_labels[channel];
+    return 0;
+}
+
+static int razer_blade_fan_set_manual(struct razer_blade_fan *fan,
+                                      int channel)
+{
+    unsigned long channel_mask = BIT(channel);
+    u8 performance_mode;
+    u8 control_mode;
+    int rollback_err;
+    int err;
+
+    err = razer_blade_fan_get_mode(fan, channel, &performance_mode,
+                                   &control_mode);
+    if (err)
+        return err;
+    if (!razer_blade_fan_supports_performance(fan, performance_mode))
+        return -EOPNOTSUPP;
+    if (control_mode == RAZER_BLADE_FAN_CONTROL_MANUAL) {
+        fan->owned_performance[channel] = performance_mode;
+        fan->owned_mask |= channel_mask;
+        return 0;
+    }
+
+    fan->owned_performance[channel] = performance_mode;
+    err = razer_blade_fan_set_mode(fan, channel, performance_mode,
+                                   RAZER_BLADE_FAN_CONTROL_MANUAL);
+    if (!err) {
+        fan->owned_mask |= channel_mask;
+        err = razer_blade_fan_set_speed(fan, channel,
+                                        fan->config->default_rpm);
+    }
+    if (!err)
+        return 0;
+
+    rollback_err = razer_blade_fan_set_mode(fan, channel, performance_mode,
+                                            control_mode);
+    if (rollback_err) {
+        fan->owned_mask |= channel_mask;
+        hid_warn(fan->kbd->hdev,
+                 "Failed to restore automatic fan control: %d\n",
+                 rollback_err);
+    } else {
+        fan->owned_mask &= ~channel_mask;
+    }
+
+    return err;
+}
+
+static int razer_blade_fan_set_auto(struct razer_blade_fan *fan, int channel)
+{
+    u8 performance_mode;
+    u8 control_mode;
+    int err;
+
+    err = razer_blade_fan_get_mode(fan, channel, &performance_mode,
+                                   &control_mode);
+    if (err)
+        return err;
+    if (control_mode == RAZER_BLADE_FAN_CONTROL_MANUAL)
+        err = razer_blade_fan_set_mode(fan, channel, performance_mode,
+                                       RAZER_BLADE_FAN_CONTROL_AUTO);
+    if (!err)
+        fan->owned_mask &= ~BIT(channel);
+
+    return err;
+}
+
+static int razer_blade_fan_write(struct device *dev,
+                                 enum hwmon_sensor_types type,
+                                 u32 attr, int channel, long value)
+{
+    struct razer_blade_fan *fan = dev_get_drvdata(dev);
+    u8 performance_mode;
+    u8 control_mode;
+    int err;
+
+    if (type == hwmon_fan && attr == hwmon_fan_target) {
+        value = clamp_val(value, (long)fan->config->min_rpm,
+                          (long)fan->config->max_rpm);
+        value = DIV_ROUND_CLOSEST(value, RAZER_BLADE_FAN_RPM_UNIT) *
+                RAZER_BLADE_FAN_RPM_UNIT;
+    } else if (type == hwmon_pwm && attr == hwmon_pwm_enable) {
+        if (value != RAZER_BLADE_FAN_HWMON_AUTO &&
+            value != RAZER_BLADE_FAN_HWMON_TARGET)
+            return -EINVAL;
+    } else {
+        return -EOPNOTSUPP;
+    }
+
+    err = razer_blade_fan_lock(fan);
+    if (err)
+        return err;
+
+    if (type == hwmon_fan) {
+        err = razer_blade_fan_get_mode(fan, channel, &performance_mode,
+                                       &control_mode);
+        if (!err && control_mode != RAZER_BLADE_FAN_CONTROL_MANUAL)
+            err = -EBUSY;
+        if (!err &&
+            !razer_blade_fan_supports_performance(fan, performance_mode))
+            err = -EOPNOTSUPP;
+        if (!err) {
+            fan->owned_performance[channel] = performance_mode;
+            fan->owned_mask |= BIT(channel);
+            err = razer_blade_fan_set_speed(fan, channel, value);
+        }
+    } else if (value == RAZER_BLADE_FAN_HWMON_TARGET) {
+        err = razer_blade_fan_set_manual(fan, channel);
+    } else {
+        err = razer_blade_fan_set_auto(fan, channel);
+    }
+
+    razer_blade_fan_unlock(fan);
+    return err;
+}
+
+static const struct hwmon_ops razer_blade_fan_hwmon_ops = {
+    .is_visible = razer_blade_fan_is_visible,
+    .read = razer_blade_fan_read,
+    .read_string = razer_blade_fan_read_string,
+    .write = razer_blade_fan_write,
+};
+
+static const struct hwmon_channel_info *razer_blade_fan_hwmon_info[] = {
+    HWMON_CHANNEL_INFO(fan,
+    HWMON_F_INPUT | HWMON_F_LABEL | HWMON_F_TARGET,
+    HWMON_F_INPUT | HWMON_F_LABEL | HWMON_F_TARGET),
+    HWMON_CHANNEL_INFO(pwm,
+    HWMON_PWM_ENABLE,
+    HWMON_PWM_ENABLE),
+    NULL
+};
+
+static const struct hwmon_chip_info razer_blade_fan_chip_info = {
+    .ops = &razer_blade_fan_hwmon_ops,
+    .info = razer_blade_fan_hwmon_info,
+};
+
+static const struct razer_blade_fan_config *
+razer_blade_fan_get_config(const struct razer_kbd_device *device)
+{
+    if (device->usb_interface_protocol != USB_INTERFACE_PROTOCOL_MOUSE)
+        return NULL;
+
+    switch (device->usb_pid) {
+    case USB_DEVICE_ID_RAZER_BLADE_PRO_EARLY_2020:
+        return &razer_blade_pro_early_2020_fan_config;
+    default:
+        return NULL;
+    }
+}
+
+static int razer_blade_fan_init(struct razer_kbd_device *device)
+{
+    const struct razer_blade_fan_config *config;
+    struct razer_blade_fan *fan;
+    int err;
+    int i;
+    int j;
+
+    config = razer_blade_fan_get_config(device);
+    if (!config)
+        return 0;
+
+    if (!config->transaction_id || !config->profile_id ||
+        !config->fan_count || config->fan_count > RAZER_BLADE_FAN_MAX_COUNT)
+        return -EINVAL;
+    if (config->has_control &&
+        (!config->performance_modes || !config->min_rpm ||
+         (config->performance_modes &
+          ~GENMASK(RAZER_BLADE_FAN_PERFORMANCE_MAX, 0)) ||
+         config->min_rpm > config->default_rpm ||
+         config->default_rpm > config->max_rpm ||
+         config->max_rpm > U8_MAX * RAZER_BLADE_FAN_RPM_UNIT ||
+         config->min_rpm % RAZER_BLADE_FAN_RPM_UNIT ||
+         config->default_rpm % RAZER_BLADE_FAN_RPM_UNIT ||
+         config->max_rpm % RAZER_BLADE_FAN_RPM_UNIT))
+        return -EINVAL;
+    for (i = 0; i < config->fan_count; i++) {
+        if (!config->fan_ids[i] || !config->fan_labels[i])
+            return -EINVAL;
+        for (j = 0; j < i; j++) {
+            if (config->fan_ids[i] == config->fan_ids[j])
+                return -EINVAL;
+        }
+    }
+
+    fan = kzalloc_obj(*fan);
+    if (!fan)
+        return -ENOMEM;
+
+    fan->kbd = device;
+    fan->config = config;
+    fan->intf = to_usb_interface(device->hdev->dev.parent);
+    mutex_init(&fan->lock);
+
+    err = usb_autopm_get_interface(fan->intf);
+    if (err)
+        goto error_free;
+
+    err = razer_blade_fan_enumerate(fan);
+    usb_autopm_put_interface(fan->intf);
+    if (err)
+        goto error_free;
+
+    fan->hwmon_dev = hwmon_device_register_with_info(
+                         &device->hdev->dev, "razerblade", fan,
+                         &razer_blade_fan_chip_info, NULL);
+    if (IS_ERR(fan->hwmon_dev)) {
+        err = PTR_ERR(fan->hwmon_dev);
+        goto error_free;
+    }
+
+    device->fan = fan;
+    return 0;
+
+error_free:
+    kfree(fan);
+    return err;
+}
+
+static void razer_blade_fan_remove(struct razer_kbd_device *device)
+{
+    struct razer_blade_fan *fan = device->fan;
+    int pm_err;
+    int err = 0;
+
+    if (!fan)
+        return;
+
+    hwmon_device_unregister(fan->hwmon_dev);
+
+    pm_err = usb_autopm_get_interface(fan->intf);
+    mutex_lock(&fan->lock);
+    fan->suspended = true;
+    if (!pm_err)
+        err = razer_blade_fan_return_to_auto(
+                  fan, RAZER_SEND_PAYLOAD_ATTEMPTS);
+    mutex_unlock(&fan->lock);
+    if (!pm_err)
+        usb_autopm_put_interface(fan->intf);
+
+    if (pm_err && fan->owned_mask)
+        err = pm_err;
+    if (err)
+        hid_warn(device->hdev,
+                 "Failed to restore automatic fan control on removal: %d\n",
+                 err);
+
+    device->fan = NULL;
+    kfree(fan);
+}
+
+#ifdef CONFIG_PM
+static int razer_blade_fan_set_suspended(struct razer_kbd_device *device,
+        bool suspended)
+{
+    struct razer_blade_fan *fan = device->fan;
+    int err;
+
+    if (!fan)
+        return 0;
+
+    mutex_lock(&fan->lock);
+    if (fan->suspended == suspended) {
+        mutex_unlock(&fan->lock);
+        return 0;
+    }
+    fan->suspended = suspended;
+    err = razer_blade_fan_return_to_auto(
+              fan, suspended ? RAZER_BLADE_FAN_CLEANUP_ATTEMPTS :
+              RAZER_SEND_PAYLOAD_ATTEMPTS);
+    mutex_unlock(&fan->lock);
+
+    if (err)
+        hid_warn(device->hdev,
+                 "Failed to restore automatic fan control during %s: %d\n",
+                 suspended ? "suspend" : "resume", err);
+
+    return err;
+}
+
+static int razer_blade_fan_can_autosuspend(struct razer_kbd_device *device)
+{
+    struct razer_blade_fan *fan = device->fan;
+    int err = 0;
+
+    if (!fan)
+        return 0;
+
+    mutex_lock(&fan->lock);
+    if (fan->owned_mask)
+        err = -EBUSY;
+    mutex_unlock(&fan->lock);
+
+    return err;
+}
+#endif
+#else
+static int razer_blade_fan_init(struct razer_kbd_device *device)
+{
+    return 0;
+}
+
+static void razer_blade_fan_remove(struct razer_kbd_device *device)
+{
+}
+
+#ifdef CONFIG_PM
+static int razer_blade_fan_set_suspended(struct razer_kbd_device *device,
+        bool suspended)
+{
+    return 0;
+}
+
+static int razer_blade_fan_can_autosuspend(struct razer_kbd_device *device)
+{
+    return 0;
+}
+#endif
+#endif
 
 /**
  * Reads the physical layout of the keyboard.
@@ -5823,6 +6529,10 @@ static int razer_kbd_probe(struct hid_device *hdev, const struct hid_device_id *
         goto exit_free;
     }
 
+    err = razer_blade_fan_init(dev);
+    if (err)
+        hid_warn(hdev, "Failed to register fan monitoring: %d\n", err);
+
     // Leave autosuspend on for laptops
     if (!is_blade_laptop(dev)) {
         usb_disable_autosuspend(usb_dev);
@@ -5847,6 +6557,8 @@ static void razer_kbd_disconnect(struct hid_device *hdev)
     struct usb_device *usb_dev = interface_to_usbdev(intf);
 
     dev = hid_get_drvdata(hdev);
+
+    razer_blade_fan_remove(dev);
 
     // Other interfaces are actual key-emitting devices
     if(intf->cur_altsetting->desc.bInterfaceProtocol == USB_INTERFACE_PROTOCOL_MOUSE) {
@@ -6354,6 +7066,28 @@ static void razer_kbd_disconnect(struct hid_device *hdev)
     hid_info(hdev, "Razer Device disconnected\n");
 }
 
+#ifdef CONFIG_PM
+static int razer_kbd_suspend(struct hid_device *hdev, pm_message_t message)
+{
+    if (PMSG_IS_AUTO(message))
+        return razer_blade_fan_can_autosuspend(hid_get_drvdata(hdev));
+
+    return razer_blade_fan_set_suspended(hid_get_drvdata(hdev), true);
+}
+
+static int razer_kbd_resume(struct hid_device *hdev)
+{
+    razer_blade_fan_set_suspended(hid_get_drvdata(hdev), false);
+    return 0;
+}
+
+static int razer_kbd_reset_resume(struct hid_device *hdev)
+{
+    razer_blade_fan_set_suspended(hid_get_drvdata(hdev), false);
+    return 0;
+}
+#endif
+
 /**
  * Setup input device keybit mask
  */
@@ -6514,6 +7248,11 @@ static struct hid_driver razer_kbd_driver = {
     .input_mapping = razer_kbd_input_mapping,
     .probe = razer_kbd_probe,
     .remove = razer_kbd_disconnect,
+#ifdef CONFIG_PM
+    .suspend = razer_kbd_suspend,
+    .resume = razer_kbd_resume,
+    .reset_resume = razer_kbd_reset_resume,
+#endif
     .event = razer_event,
     .raw_event = razer_raw_event,
     .input_configured = razer_input_configured,
