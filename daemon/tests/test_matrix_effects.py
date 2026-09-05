@@ -77,6 +77,17 @@ class MatrixLayoutTest(unittest.TestCase):
 
 
 class WheelEffectTest(unittest.TestCase):
+    def test_wheel_completes_one_rotation_per_second(self):
+        layout = BLADE_PRO_EARLY_2020_LAYOUTS['en_US']
+
+        for direction, quarter_phase in ((1, -0.25), (2, 0.25)):
+            with self.subTest(direction=direction):
+                self.assertEqual(wheel_phase(0.25, direction), quarter_phase)
+                self.assertEqual(
+                    render_wheel_frame(layout, wheel_phase(1.0, direction)),
+                    render_wheel_frame(layout, 0),
+                )
+
     def test_wheel_directions_advance_opposite_ways(self):
         layout = BLADE_PRO_EARLY_2020_LAYOUTS['en_US']
         right_phase = wheel_phase(0.4, 1)

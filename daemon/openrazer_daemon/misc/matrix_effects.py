@@ -57,7 +57,7 @@ def render_wheel_frame(layout, phase):
     return layout.render(pixel)
 
 
-def wheel_phase(elapsed, direction, period=4.0):
+def wheel_phase(elapsed, direction, period=1.0):
     """
     Return the animation phase for a wheel direction.
     """
