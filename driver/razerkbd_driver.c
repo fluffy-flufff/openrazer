@@ -377,6 +377,11 @@ static void razer_get_report_params(struct usb_device *usb_dev, uint *report_ind
         *response_index = 0x02;
         *wait = RAZER_DEATHSTALKER_V2_WIRELESS_WAIT_US;
         break;
+    case USB_DEVICE_ID_RAZER_BLADE_PRO_EARLY_2020:
+        *report_index = 0x01;
+        *response_index = 0x01;
+        *wait = RAZER_BLADE_PRO_EARLY_2020_WAIT_US;
+        break;
     default:
         *report_index = 0x01;
         *response_index = 0x01;
