@@ -4496,7 +4496,6 @@ static ssize_t razer_attr_write_matrix_custom_frame(struct device *dev, struct d
         case USB_DEVICE_ID_RAZER_BLADE_PRO_LATE_2019:
         case USB_DEVICE_ID_RAZER_BLADE_STUDIO_EDITION_2019:
         case USB_DEVICE_ID_RAZER_BLADE_15_ADV_2020:
-        case USB_DEVICE_ID_RAZER_BLADE_PRO_EARLY_2020:
         case USB_DEVICE_ID_RAZER_BLADE_15_ADV_EARLY_2021:
         case USB_DEVICE_ID_RAZER_BLADE_17_PRO_EARLY_2021:
         case USB_DEVICE_ID_RAZER_BLADE_14_2021:
@@ -4516,6 +4515,12 @@ static ssize_t razer_attr_write_matrix_custom_frame(struct device *dev, struct d
         case USB_DEVICE_ID_RAZER_BLADE_18_2025:
             request = razer_chroma_standard_matrix_set_custom_frame(row_id, start_col, stop_col, (unsigned char*)&buf[offset]);
             request.transaction_id.id = 0xFF;
+            break;
+
+        case USB_DEVICE_ID_RAZER_BLADE_PRO_EARLY_2020:
+            request = razer_chroma_standard_matrix_set_custom_frame(row_id, start_col, stop_col, (unsigned char*)&buf[offset]);
+            request.transaction_id.id = 0xFF;
+            want_response = false;
             break;
 
         default:
