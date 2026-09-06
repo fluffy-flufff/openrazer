@@ -14,6 +14,8 @@ import time
 import json
 from typing import Optional
 
+from gi.repository import GLib
+
 from openrazer_daemon.dbus_services.service import DBusService
 import openrazer_daemon.dbus_services.dbus_methods
 from openrazer_daemon.misc import effect_sync
@@ -45,6 +47,7 @@ class RazerDevice(DBusService):
     MATRIX_LAYOUTS = None
     SOFTWARE_WHEEL = False
     CUSTOM_FRAME_EFFECT_ONCE = False
+    LID_LIGHTING = False
 
     WAVE_DIRS = (1, 2)
 
@@ -52,7 +55,7 @@ class RazerDevice(DBusService):
 
     DEVICE_IMAGE: Optional[str] = None
 
-    def __init__(self, device_path, device_number, config, persistence, testing, additional_interfaces, additional_methods, unknown_serial_counter):
+    def __init__(self, device_path, device_number, config, persistence, testing, additional_interfaces, additional_methods, unknown_serial_counter, lighting_state='software'):
 
         self.logger = logging.getLogger('razer.device{0}'.format(device_number))
         self.logger.info("Initialising device.%d %s", device_number, self.__class__.__name__)
@@ -72,6 +75,10 @@ class RazerDevice(DBusService):
         self._disable_persistence = False
         self._effect_restore_zones = set()
         self._persisted_effect_state = {}
+        self._lighting_state = lighting_state
+        self._lighting_state_applied = None
+        self._system_suspended = False
+        self._lighting_restore_source = None
         self.additional_interfaces = []
         if additional_interfaces is not None:
             self.additional_interfaces.extend(additional_interfaces)
@@ -346,7 +353,7 @@ class RazerDevice(DBusService):
         except (configparser.NoSectionError, configparser.NoOptionError):
             pass
 
-        if self.DRIVER_MODE:
+        if self.DRIVER_MODE and lighting_state == 'software':
             self.logger.info('Setting device to "driver" mode. Daemon will handle special functionality')
             self.set_device_mode(0x03, 0x00)  # Driver mode
 
@@ -367,16 +374,26 @@ class RazerDevice(DBusService):
                     break
 
         with self._suppress_state_updates():
-            try:
-                self._restore_effects(self._effect_restore_zones)
+            if lighting_state == 'off':
+                self.disable_brightness()
+                self._disable_lighting()
+                successful = True
+            else:
+                restore_effects = self._restore_hardware_effects if lighting_state == 'hardware' else self._restore_effects
+                try:
+                    restore_effects(self._effect_restore_zones)
 
-                if restore_persistence:
-                    # Some devices need setting a second time after encountering Razer Synapse on Windows
-                    if self.config.getboolean('Startup', "persistence_dual_boot_quirk") is True:
-                        self.logger.debug("Restoring effect persistence again (dual boot quirk)")
-                        self._restore_effects(self._effect_restore_zones)
-            finally:
-                self.restore_brightness()
+                    if restore_persistence:
+                        # Some devices need setting a second time after encountering Razer Synapse on Windows
+                        if self.config.getboolean('Startup', "persistence_dual_boot_quirk") is True:
+                            self.logger.debug("Restoring effect persistence again (dual boot quirk)")
+                            restore_effects(self._effect_restore_zones)
+                    if lighting_state == 'hardware' and self.DRIVER_MODE:
+                        self.set_device_mode(0x00, 0x00)
+                finally:
+                    successful = self.restore_brightness() is not False
+        if successful:
+            self._lighting_state_applied = lighting_state
 
     def send_effect_event(self, zone, effect_name, *args):
         """
@@ -391,10 +408,24 @@ class RazerDevice(DBusService):
         :param args: Effect arguments
         :type args: list
         """
+        if not self._disable_notifications and self._lighting_state != 'software':
+            self._queue_lighting_restore()
+
         payload = ['effect', self, zone, effect_name]
         payload.extend(args)
 
         self.notify_observers(tuple(payload))
+
+    def _queue_lighting_restore(self):
+        self._lighting_state_applied = None
+        if self._lighting_restore_source is None and not self._is_closed and not self._system_suspended:
+            self._lighting_restore_source = GLib.idle_add(self._restore_lighting_state)
+
+    def _restore_lighting_state(self):
+        self._lighting_restore_source = None
+        if not self._is_closed and not self._system_suspended:
+            self.set_lighting_state(self._lighting_state)
+        return False
 
     def dedicated_macro_keys(self):
         """
@@ -504,21 +535,79 @@ class RazerDevice(DBusService):
         """
         Temporarily turn off device lighting.
         """
-        self.logger.info("Turning off lighting for %s", self.__class__.__name__)
-        with self._suppress_state_updates():
-            self.disable_brightness()
-            self._disable_lighting()
-        return True
+        return self.set_lighting_state('off')
 
     def restore_lighting(self):
         """
         Restore lighting after a temporary shutdown.
         """
-        self.logger.info("Restoring lighting for %s", self.__class__.__name__)
-        with self._suppress_state_updates():
-            successful = self.restore_brightness()
-            self._restore_lighting()
-        return successful is not False
+        return self.set_lighting_state('software')
+
+    def set_lighting_state(self, state, force=False):
+        """
+        Apply temporary lighting policy without changing the saved profile.
+        """
+        if state not in ('software', 'hardware', 'off'):
+            raise ValueError('Invalid lighting state: ' + str(state))
+
+        self._lighting_state = state
+        if self._system_suspended:
+            return True
+        if not force and state == self._lighting_state_applied:
+            return True
+
+        self._lighting_state_applied = None
+        self._pause_lighting()
+        successful = True
+        try:
+            with self._suppress_state_updates():
+                if state == 'off':
+                    self.disable_brightness()
+                    self._disable_lighting()
+                else:
+                    if state == 'software' and self.DRIVER_MODE:
+                        try:
+                            self.set_device_mode(0x03, 0x00)
+                        except OSError as error:
+                            successful = False
+                            self.logger.warning('Failed to restore "driver" mode (%s). Continuing restore.', error)
+
+                    try:
+                        restored_zones = self._restore_lighting() or set()
+                        effect_zones = set(self._effect_restore_zones) - set(restored_zones)
+                        if state == 'hardware':
+                            self._restore_hardware_effects(effect_zones)
+                            if self.DRIVER_MODE:
+                                self.set_device_mode(0x00, 0x00)
+                        else:
+                            self._restore_effects(effect_zones)
+                    finally:
+                        if self.restore_brightness() is False:
+                            successful = False
+
+            if successful and state == 'software':
+                self._resume_lighting()
+        except OSError:
+            successful = False
+            self._pause_lighting()
+            self.logger.exception('Failed to apply %s lighting state', state)
+
+        if successful:
+            self._lighting_state_applied = state
+        return successful
+
+    def _pause_lighting(self):
+        """
+        Override to pause daemon-rendered effects before a lighting change.
+        """
+
+    def _resume_lighting(self):
+        """
+        Override to resume daemon-rendered effects after restoring lighting.
+        """
+
+    def _restore_hardware_effects(self, zones):
+        self._restore_effects(zones)
 
     def restore_effect(self):
         """
@@ -623,6 +712,9 @@ class RazerDevice(DBusService):
                 self._effect_restore_zones.add(zone)
         else:
             self.zone[key] = value
+
+        if self._lighting_state != 'software':
+            self._queue_lighting_restore()
 
     def get_persistence_effect_state(self, zone):
         return self._persisted_effect_state.get(zone, self.zone[zone])
@@ -1233,6 +1325,9 @@ class RazerDevice(DBusService):
         Suspend device
         """
         self.logger.info("Suspending %s", self.__class__.__name__)
+        self._system_suspended = True
+        self._lighting_state_applied = None
+        self._pause_lighting()
         with self._suppress_state_updates():
             self.disable_brightness()
             self._disable_lighting()
@@ -1243,24 +1338,12 @@ class RazerDevice(DBusService):
         Resume device
         """
         self.logger.info("Resuming %s", self.__class__.__name__)
-        successful = True
-        with self._suppress_state_updates():
-            if self.DRIVER_MODE:
-                self.logger.info('Setting device back to "driver" mode.')
-                try:
-                    self.set_device_mode(0x03, 0x00)  # Driver mode
-                except OSError as error:
-                    successful = False
-                    self.logger.warning('Failed to restore "driver" mode (%s). Continuing resume.', error)
-
-            try:
+        self._system_suspended = False
+        try:
+            with self._suppress_state_updates():
                 self._resume_device()
-                restored_zones = self._restore_lighting() or set()
-                effect_zones = set(self._effect_restore_zones) - set(restored_zones)
-                self._restore_effects(effect_zones)
-            finally:
-                if self.restore_brightness() is False:
-                    successful = False
+        finally:
+            successful = self.set_lighting_state(self._lighting_state, force=True)
         return successful
 
     def _disable_lighting(self):
@@ -1302,6 +1385,10 @@ class RazerDevice(DBusService):
         Close any resources opened by subclasses
         """
         if not self._is_closed:
+            if self._lighting_restore_source is not None:
+                GLib.source_remove(self._lighting_restore_source)
+                self._lighting_restore_source = None
+
             # If this is a mouse, retrieve current DPI for local storage
             # in case the user has changed the DPI on-the-fly
             # (e.g. the DPI buttons)
@@ -1310,15 +1397,10 @@ class RazerDevice(DBusService):
                 if dpi_func is not None:
                     self.dpi = dpi_func()
 
-            if self.DRIVER_MODE:
-                # Set back to device mode
-                try:
-                    self.set_device_mode(0x00, 0x00)  # Device mode
-                except FileNotFoundError:
-                    pass
-
             self._close()
-
+            state = 'off' if self._system_suspended or self._lighting_state == 'off' else 'hardware'
+            self._system_suspended = False
+            self.set_lighting_state(state, force=True)
             self._is_closed = True
 
     def register_observer(self, observer):
@@ -1379,6 +1461,9 @@ class RazerDevice(DBusService):
 
         for observer in self._observer_list:
             observer.notify(msg)
+
+        if self._lighting_state != 'software':
+            self._queue_lighting_restore()
 
     @classmethod
     def match(cls, device_id, dev_path):

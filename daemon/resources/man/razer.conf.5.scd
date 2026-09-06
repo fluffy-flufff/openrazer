@@ -32,6 +32,11 @@ The *[Startup]* section in the configuration file contains values to be used dur
 
 *devices_off_on_screensaver* _bool_
 	This flag specifies if the functionality to turn off razer devices when the screensaver is activated is active when the daemon starts.
+	When disabled, a locked or inactive local session uses firmware lighting instead of daemon-rendered effects. The selected effect is restored when the session is active and unlocked.
+
+*devices_off_on_display* _bool_
+	Turn off lighting when the desktop reports that its displays are powered off. This is independent of screensaver locking and is enabled by default. Display power monitoring currently supports GNOME Mutter; desktops without this interface retain the screensaver behavior above.
+	On supported laptops, closing the lid turns off the integrated keyboard and logo independently of these settings. External devices continue to follow the desktop policy. Neither setting changes the system's suspend or lid-close action.
 
 *battery_notifier* _bool_
 	This flag specifies that notifications should be shown regularly with the remaining battery level.

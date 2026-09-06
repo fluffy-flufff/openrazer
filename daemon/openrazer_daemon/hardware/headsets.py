@@ -23,13 +23,10 @@ class RazerKraken71(__RazerDevice):
     DEVICE_IMAGE = "https://assets.razerzone.com/eeimages/support/products/229/229_kraken_71.png"
 
     def _disable_lighting(self):
-        self.suspend_args.clear()
-        self.suspend_args['effect'] = self.zone["backlight"]["effect"]
-
         _dbus_chroma.set_none_effect(self)
 
     def _restore_lighting(self):
-        effect = self.suspend_args.get('effect', '')
+        effect = self.zone["backlight"]["effect"]
         if effect == 'static':  # Static on classic is only 1 colour
             _dbus_chroma.set_static_effect(self, 0x00, 0x00, 0x00)
             return {'backlight'}
@@ -58,15 +55,11 @@ class RazerKraken71Chroma(__RazerDevice):
     DEVICE_IMAGE = "https://assets.razerzone.com/eeimages/support/products/280/280_kraken_71_chroma.png"
 
     def _disable_lighting(self):
-        self.suspend_args.clear()
-        self.suspend_args['effect'] = self.zone["backlight"]["effect"]
-        self.suspend_args['args'] = self.zone["backlight"]["colors"][0:3]
-
         _dbus_chroma.set_none_effect(self)
 
     def _restore_lighting(self):
-        effect = self.suspend_args.get('effect', '')
-        args = self.suspend_args.get('args', [])
+        effect = self.zone["backlight"]["effect"]
+        args = self.zone["backlight"]["colors"][0:3]
 
         if effect == 'spectrum':
             _dbus_chroma.set_spectrum_effect(self)
@@ -94,31 +87,22 @@ class RazerKraken71V2(__RazerDevice):
     DEVICE_IMAGE = "https://assets.razerzone.com/eeimages/support/products/729/729_kraken_71_v2.png"
 
     def _disable_lighting(self):
-        self.suspend_args.clear()
-        self.suspend_args['effect'] = self.zone["backlight"]["effect"]
-        if self.suspend_args['effect'] == "breathDual":
-            self.suspend_args['args'] = self.zone["backlight"]["colors"][0:6]
-        elif self.suspend_args['effect'] == "breathTriple":
-            self.suspend_args['args'] = self.zone["backlight"]["colors"][0:9]
-        else:
-            self.suspend_args['args'] = self.zone["backlight"]["colors"][0:3]
-
         _dbus_chroma.set_none_effect(self)
 
     def _restore_lighting(self):
-        effect = self.suspend_args.get('effect', '')
-        args = self.suspend_args.get('args', [])
+        effect = self.zone["backlight"]["effect"]
+        args = self.zone["backlight"]["colors"]
 
         if effect == 'spectrum':
             _dbus_chroma.set_spectrum_effect(self)
         elif effect == 'static':
-            _dbus_chroma.set_static_effect(self, *args)
+            _dbus_chroma.set_static_effect(self, *args[0:3])
         elif effect == 'breathSingle':
-            _dbus_chroma.set_breath_single_effect(self, *args)
+            _dbus_chroma.set_breath_single_effect(self, *args[0:3])
         elif effect == 'breathDual':
-            _dbus_chroma.set_breath_dual_effect(self, *args)
+            _dbus_chroma.set_breath_dual_effect(self, *args[0:6])
         elif effect == 'breathTriple':
-            _dbus_chroma.set_breath_triple_effect(self, *args)
+            _dbus_chroma.set_breath_triple_effect(self, *args[0:9])
         else:
             return set()
         return {'backlight'}
@@ -140,31 +124,22 @@ class RazerKrakenTournamentEdition(__RazerDevice):
     DEVICE_IMAGE = "https://assets.razerzone.com/eeimages/support/products/1399/1399_razerkrakente.png"
 
     def _disable_lighting(self):
-        self.suspend_args.clear()
-        self.suspend_args['effect'] = self.zone["backlight"]["effect"]
-        if self.suspend_args['effect'] == "breathDual":
-            self.suspend_args['args'] = self.zone["backlight"]["colors"][0:6]
-        elif self.suspend_args['effect'] == "breathTriple":
-            self.suspend_args['args'] = self.zone["backlight"]["colors"][0:9]
-        else:
-            self.suspend_args['args'] = self.zone["backlight"]["colors"][0:3]
-
         _dbus_chroma.set_none_effect(self)
 
     def _restore_lighting(self):
-        effect = self.suspend_args.get('effect', '')
-        args = self.suspend_args.get('args', [])
+        effect = self.zone["backlight"]["effect"]
+        args = self.zone["backlight"]["colors"]
 
         if effect == 'spectrum':
             _dbus_chroma.set_spectrum_effect(self)
         elif effect == 'static':
-            _dbus_chroma.set_static_effect(self, *args)
+            _dbus_chroma.set_static_effect(self, *args[0:3])
         elif effect == 'breathSingle':
-            _dbus_chroma.set_breath_single_effect(self, *args)
+            _dbus_chroma.set_breath_single_effect(self, *args[0:3])
         elif effect == 'breathDual':
-            _dbus_chroma.set_breath_dual_effect(self, *args)
+            _dbus_chroma.set_breath_dual_effect(self, *args[0:6])
         elif effect == 'breathTriple':
-            _dbus_chroma.set_breath_triple_effect(self, *args)
+            _dbus_chroma.set_breath_triple_effect(self, *args[0:9])
         else:
             return set()
         return {'backlight'}
@@ -186,31 +161,22 @@ class RazerKrakenUltimate(__RazerDevice):
     DEVICE_IMAGE = "https://assets.razerzone.com/eeimages/support/products/1603/rzr_kraken_ultimate_render01_2019_resized.png"
 
     def _disable_lighting(self):
-        self.suspend_args.clear()
-        self.suspend_args['effect'] = self.zone["backlight"]["effect"]
-        if self.suspend_args['effect'] == "breathDual":
-            self.suspend_args['args'] = self.zone["backlight"]["colors"][0:6]
-        elif self.suspend_args['effect'] == "breathTriple":
-            self.suspend_args['args'] = self.zone["backlight"]["colors"][0:9]
-        else:
-            self.suspend_args['args'] = self.zone["backlight"]["colors"][0:3]
-
         _dbus_chroma.set_none_effect(self)
 
     def _restore_lighting(self):
-        effect = self.suspend_args.get('effect', '')
-        args = self.suspend_args.get('args', [])
+        effect = self.zone["backlight"]["effect"]
+        args = self.zone["backlight"]["colors"]
 
         if effect == 'spectrum':
             _dbus_chroma.set_spectrum_effect(self)
         elif effect == 'static':
-            _dbus_chroma.set_static_effect(self, *args)
+            _dbus_chroma.set_static_effect(self, *args[0:3])
         elif effect == 'breathSingle':
-            _dbus_chroma.set_breath_single_effect(self, *args)
+            _dbus_chroma.set_breath_single_effect(self, *args[0:3])
         elif effect == 'breathDual':
-            _dbus_chroma.set_breath_dual_effect(self, *args)
+            _dbus_chroma.set_breath_dual_effect(self, *args[0:6])
         elif effect == 'breathTriple':
-            _dbus_chroma.set_breath_triple_effect(self, *args)
+            _dbus_chroma.set_breath_triple_effect(self, *args[0:9])
         else:
             return set()
         return {'backlight'}

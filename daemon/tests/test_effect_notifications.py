@@ -11,6 +11,8 @@ from openrazer_daemon.misc.ripple_effect import RippleManager
 class DummyDevice(object):
     def __init__(self):
         self.notification = None
+        self._disable_notifications = False
+        self._lighting_state = 'software'
 
     def notify_observers(self, msg):
         self.notification = msg

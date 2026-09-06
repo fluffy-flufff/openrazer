@@ -30,6 +30,10 @@ class DevicePowerTest(unittest.TestCase):
         self.device._disable_persistence = False
         self.device._effect_restore_zones = {'backlight'}
         self.device._persisted_effect_state = {}
+        self.device._lighting_state = 'software'
+        self.device._lighting_state_applied = 'software'
+        self.device._system_suspended = False
+        self.device._lighting_restore_source = None
         self.device.DRIVER_MODE = True
         self.calls = []
 
@@ -56,8 +60,10 @@ class DevicePowerTest(unittest.TestCase):
         self.assertEqual([call[0] for call in self.calls], [
             'disable_brightness',
             '_disable_lighting',
-            'restore_brightness',
+            'set_device_mode',
             '_restore_lighting',
+            '_restore_effects',
+            'restore_brightness',
         ])
         self.assertFalse(self.device.disable_notify)
         self.assertFalse(self.device.disable_persistence)
@@ -70,13 +76,13 @@ class DevicePowerTest(unittest.TestCase):
             'disable_brightness',
             '_disable_lighting',
             '_suspend_device',
-            'set_device_mode',
             '_resume_device',
+            'set_device_mode',
             '_restore_lighting',
             '_restore_effects',
             'restore_brightness',
         ])
-        self.assertEqual(self.calls[3][1], (0x03, 0x00))
+        self.assertEqual(self.calls[4][1], (0x03, 0x00))
         self.assertEqual(self.calls[6][1], ({'backlight'},))
 
     def test_runtime_effect_marks_only_its_zone_for_resume(self):
@@ -206,8 +212,7 @@ class DevicePowerTest(unittest.TestCase):
     def test_brightness_runs_when_effect_restore_fails(self):
         self.device._restore_effects = unittest.mock.MagicMock(side_effect=OSError('failed'))
 
-        with self.assertRaises(OSError):
-            self.device.resume_device()
+        self.assertFalse(self.device.resume_device())
 
         self.assertIn(('restore_brightness', ()), self.calls)
         self.assertFalse(self.device.disable_notify)
@@ -268,8 +273,7 @@ class DevicePowerTest(unittest.TestCase):
     def test_state_suppression_is_restored_after_error(self):
         self.device.disable_brightness = unittest.mock.MagicMock(side_effect=OSError)
 
-        with self.assertRaises(OSError):
-            self.device.disable_lighting()
+        self.assertFalse(self.device.disable_lighting())
 
         self.assertFalse(self.device.disable_notify)
         self.assertFalse(self.device.disable_persistence)
@@ -286,6 +290,10 @@ class KrakenPowerTest(unittest.TestCase):
                 device._disable_notifications = False
                 device._disable_persistence = False
                 device._effect_restore_zones = restore_zones
+                device._lighting_state = 'software'
+                device._lighting_state_applied = 'software'
+                device._system_suspended = False
+                device._lighting_restore_source = None
                 device.DRIVER_MODE = False
                 device.ZONES = ('backlight',)
                 device.suspend_args = {}
@@ -319,67 +327,87 @@ class ScreensaverMonitorTest(unittest.TestCase):
     @unittest.mock.patch('openrazer_daemon.misc.screensaver_monitor.dbus.SessionBus')
     def setUp(self, session_bus):
         self.parent = unittest.mock.MagicMock()
-        self.parent.disable_lighting.return_value = True
-        self.parent.restore_lighting.return_value = True
         self.bus = session_bus.return_value
+        self.bus.name_has_owner.return_value = False
         self.monitor = ScreensaverMonitor(self.parent)
 
     def test_registers_supported_screensaver_interfaces(self):
-        self.assertEqual(self.bus.add_signal_receiver.call_count, len(DBUS_SCREENSAVER_INTERFACES))
+        self.assertEqual(self.bus.add_signal_receiver.call_count, 2 * len(DBUS_SCREENSAVER_INTERFACES))
 
-    def test_only_restores_lighting_disabled_by_monitor(self):
+    def test_reports_state_without_running_system_hooks(self):
+        self.assertIsNone(self.monitor.active)
         self.monitor.signal_callback(False)
-        self.parent.restore_lighting.assert_not_called()
-
+        self.assertFalse(self.monitor.active)
         self.monitor.signal_callback(True)
-        self.monitor.signal_callback(True)
-        self.parent.disable_lighting.assert_called_once_with()
+        self.assertTrue(self.monitor.active)
+        self.assertEqual(self.parent.apply_lighting_policy.call_count, 2)
         self.parent.suspend_devices.assert_not_called()
-
-        self.monitor.signal_callback(False)
-        self.monitor.signal_callback(False)
-        self.parent.restore_lighting.assert_called_once_with()
         self.parent.resume_devices.assert_not_called()
 
-    def test_retries_partial_disable_and_restores_owned_devices(self):
-        self.parent.disable_lighting.side_effect = [False, True]
-
-        self.monitor.signal_callback(True)
-        self.monitor.signal_callback(True)
-
-        self.assertEqual(self.parent.disable_lighting.call_count, 2)
-
-        self.monitor.signal_callback(False)
-        self.parent.restore_lighting.assert_called_once_with()
-
-    def test_retries_partial_restore(self):
-        self.parent.restore_lighting.side_effect = [False, True]
-        self.monitor.signal_callback(True)
-
+    def test_repeated_signal_can_retry_failed_device_transition(self):
         self.monitor.signal_callback(False)
         self.monitor.signal_callback(False)
-
-        self.assertEqual(self.parent.restore_lighting.call_count, 2)
-        self.assertFalse(self.monitor._lighting_disabled)
+        self.assertEqual(self.parent.apply_lighting_policy.call_count, 2)
 
     def test_monitoring_change_applies_current_state(self):
         self.monitor.monitoring = False
         self.monitor.signal_callback(True)
-        self.parent.disable_lighting.assert_not_called()
-
+        self.assertTrue(self.monitor.active)
+        self.assertFalse(self.monitor.monitoring)
         self.monitor.monitoring = True
-        self.parent.disable_lighting.assert_called_once_with()
+        self.assertTrue(self.monitor.monitoring)
+        self.assertEqual(self.parent.apply_lighting_policy.call_count, 3)
 
-        self.monitor.monitoring = False
-        self.parent.restore_lighting.assert_called_once_with()
+    def test_reads_initial_active_state_without_starting_service(self):
+        self.bus.name_has_owner.side_effect = lambda name: name == 'org.gnome.ScreenSaver'
+        self.bus.get_object.return_value.GetActive.return_value = True
+        self.monitor.refresh()
+        self.assertTrue(self.monitor.active)
+        self.bus.get_object.assert_called_once_with(
+            'org.gnome.ScreenSaver', '/org/gnome/ScreenSaver', introspect=False)
 
-    def test_reapply_keeps_lighting_off_after_system_resume(self):
+    def test_tracks_multiple_interfaces(self):
+        self.monitor.signal_callback(True, 'org.gnome.ScreenSaver')
+        self.monitor.signal_callback(False, 'org.freedesktop.ScreenSaver')
+        self.assertTrue(self.monitor.active)
+
+    def test_query_timeout_preserves_known_lock_state(self):
+        self.monitor.signal_callback(True, 'org.gnome.ScreenSaver')
+        self.parent.reset_mock()
+        self.bus.name_has_owner.side_effect = lambda name: name == 'org.gnome.ScreenSaver'
+        self.bus.get_object.return_value.GetActive.side_effect = dbus.exceptions.DBusException('timed out')
+
+        self.monitor.refresh()
+
+        self.assertTrue(self.monitor.active)
+        self.parent.apply_lighting_policy.assert_not_called()
+        self.bus.get_object.return_value.GetActive.assert_called_once_with(
+            dbus_interface='org.gnome.ScreenSaver', timeout=1.0)
+
+    def test_bus_query_error_preserves_known_lock_state(self):
+        self.monitor.signal_callback(True, 'org.gnome.ScreenSaver')
+        self.parent.reset_mock()
+        self.bus.name_has_owner.side_effect = dbus.exceptions.DBusException('bus unavailable')
+
+        self.monitor.refresh()
+
+        self.assertTrue(self.monitor.active)
+        self.parent.apply_lighting_policy.assert_not_called()
+
+    def test_service_disappearance_clears_stale_lock(self):
         self.monitor.signal_callback(True)
-        self.parent.disable_lighting.reset_mock()
+        self.monitor._owner_changed('org.gnome.ScreenSaver', ':1.2', '')
+        self.assertIsNone(self.monitor.active)
 
-        self.monitor.reapply_lighting()
-
-        self.parent.disable_lighting.assert_called_once_with()
+    def test_close_removes_receivers_and_ignores_late_signals(self):
+        matches = list(self.monitor._matches)
+        self.monitor.close()
+        self.parent.reset_mock()
+        self.monitor.signal_callback(True)
+        self.monitor.refresh()
+        self.parent.apply_lighting_policy.assert_not_called()
+        for match in matches:
+            match.remove.assert_called()
 
 
 class SystemSleepMonitorTest(unittest.TestCase):
@@ -594,18 +622,26 @@ class DaemonPowerTest(unittest.TestCase):
         self.assertEqual(section['backlight_speed'], '3')
         self.assertEqual(section['backlight_wave_dir'], '2')
 
-    def test_resume_reapplies_screensaver_state(self):
+    def test_resume_refreshes_policy_before_touching_devices(self):
         daemon = object.__new__(RazerDaemon)
         device = unittest.mock.MagicMock()
         daemon.logger = unittest.mock.MagicMock()
         daemon._razer_devices = [types.SimpleNamespace(dbus=device, serial='device')]
         daemon._screensaver_monitor = unittest.mock.MagicMock()
-        daemon._screensaver_monitor.reapply_lighting.return_value = True
+        daemon._lighting_power_monitor = unittest.mock.MagicMock()
+        daemon.apply_lighting_policy = unittest.mock.MagicMock()
+        calls = unittest.mock.MagicMock()
+        calls.attach_mock(daemon._screensaver_monitor.refresh, 'screen')
+        calls.attach_mock(daemon._lighting_power_monitor.refresh, 'power')
+        calls.attach_mock(daemon.apply_lighting_policy, 'policy')
+        calls.attach_mock(device.resume_device, 'resume')
 
         daemon.resume_devices()
 
-        device.resume_device.assert_called_once_with()
-        daemon._screensaver_monitor.reapply_lighting.assert_called_once_with()
+        self.assertEqual(calls.mock_calls, [
+            unittest.mock.call.screen(), unittest.mock.call.power(),
+            unittest.mock.call.policy(), unittest.mock.call.resume(),
+        ])
 
     def test_resume_continues_after_device_timeout(self):
         daemon = object.__new__(RazerDaemon)
@@ -618,27 +654,30 @@ class DaemonPowerTest(unittest.TestCase):
             types.SimpleNamespace(dbus=resumed, serial='awake'),
         ]
         daemon._screensaver_monitor = unittest.mock.MagicMock()
-        daemon._screensaver_monitor.reapply_lighting.return_value = True
+        daemon._lighting_power_monitor = None
+        daemon.apply_lighting_policy = unittest.mock.MagicMock()
 
         successful = daemon.resume_devices()
 
         self.assertFalse(successful)
         resumed.resume_device.assert_called_once_with()
-        daemon._screensaver_monitor.reapply_lighting.assert_called_once_with()
+        daemon.apply_lighting_policy.assert_called_once_with()
         daemon.logger.warning.assert_called_once()
 
-    def test_resume_reapplies_screensaver_after_unexpected_error(self):
+    def test_resume_updates_policy_even_when_device_raises(self):
         daemon = object.__new__(RazerDaemon)
         daemon.logger = unittest.mock.MagicMock()
         device = unittest.mock.MagicMock()
         device.resume_device.side_effect = RuntimeError('bug')
         daemon._razer_devices = [types.SimpleNamespace(dbus=device, serial='device')]
         daemon._screensaver_monitor = unittest.mock.MagicMock()
+        daemon._lighting_power_monitor = None
+        daemon.apply_lighting_policy = unittest.mock.MagicMock()
 
         with self.assertRaises(RuntimeError):
             daemon.resume_devices()
 
-        daemon._screensaver_monitor.reapply_lighting.assert_called_once_with()
+        daemon.apply_lighting_policy.assert_called_once_with()
 
 
 if __name__ == '__main__':

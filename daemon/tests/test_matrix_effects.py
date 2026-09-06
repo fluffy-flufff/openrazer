@@ -6,7 +6,7 @@ import unittest.mock
 
 from openrazer_daemon.dbus_services.dbus_methods.all import layout_ids
 from openrazer_daemon.dbus_services.dbus_methods.chroma_keyboard import set_wheel_effect
-from openrazer_daemon.hardware.keyboards import _MacroKeyboard, _RippleKeyboard
+from openrazer_daemon.hardware.keyboards import _RippleKeyboard
 from openrazer_daemon.misc.matrix_effects import BLADE_PRO_EARLY_2020_LAYOUTS, render_wheel_frame, select_matrix_layout, wheel_phase
 from openrazer_daemon.misc.ripple_effect import RippleEffectThread, RippleManager, WheelEffectThread
 
@@ -148,6 +148,7 @@ class RippleGeometryTest(unittest.TestCase):
 class SoftwareEffectRestoreTest(unittest.TestCase):
     def make_keyboard(self, effect, restore_persistence):
         keyboard = unittest.mock.Mock()
+        keyboard._lighting_state = 'software'
         keyboard.config.getboolean.return_value = restore_persistence
         keyboard.zone = {
             'backlight': {
@@ -179,79 +180,85 @@ class SoftwareEffectRestoreTest(unittest.TestCase):
 
         keyboard.setWheel.assert_called_once_with(2)
 
+    def test_startup_defers_software_effect_while_locked_or_dark(self):
+        for state in ('hardware', 'off'):
+            with self.subTest(state=state):
+                keyboard = self.make_keyboard('wheel', restore_persistence=True)
+                keyboard._lighting_state = state
+
+                _RippleKeyboard._restore_software_effect(keyboard)
+
+                keyboard.setWheel.assert_not_called()
+
 
 class LightingLifecycleOrderingTest(unittest.TestCase):
     def make_keyboard(self, events, custom_once=True):
         keyboard = object.__new__(_RippleKeyboard)
+        keyboard.logger = unittest.mock.Mock()
         keyboard._is_closed = True
+        keyboard._lighting_state = 'software'
+        keyboard._lighting_state_applied = 'software'
+        keyboard._system_suspended = False
+        keyboard._disable_notifications = False
+        keyboard._disable_persistence = False
+        keyboard._effect_restore_zones = {'backlight'}
+        keyboard.zone = {'backlight': {'effect': 'spectrum'}}
         keyboard.CUSTOM_FRAME_EFFECT_ONCE = custom_once
         keyboard.ripple_manager = unittest.mock.Mock()
         keyboard.ripple_manager.suspend.side_effect = lambda reason: events.append(('pause', reason))
         keyboard.ripple_manager.resume.side_effect = lambda reason: events.append(('resume', reason))
+        keyboard.disable_brightness = lambda: events.append(('dark',))
+        keyboard.restore_brightness = lambda: events.append(('brightness',))
+        keyboard.set_device_mode = lambda *args: events.append(('mode', *args))
+        keyboard._restore_effects = lambda zones: events.append(('effects',))
         return keyboard
 
     def test_workers_pause_before_shutdown_and_resume_after_restore(self):
         events = []
         keyboard = self.make_keyboard(events)
-        suspend_result = object()
-        resume_result = object()
-        disable_result = object()
-        restore_result = object()
-
-        with unittest.mock.patch.object(_MacroKeyboard, 'suspend_device', lambda _self: (events.append(('base', 'suspend')), suspend_result)[1]):
-            self.assertIs(keyboard.suspend_device(), suspend_result)
-        with unittest.mock.patch.object(_MacroKeyboard, 'resume_device', lambda _self: (events.append(('base', 'resume')), resume_result)[1]):
-            self.assertIs(keyboard.resume_device(), resume_result)
-        with unittest.mock.patch.object(_MacroKeyboard, 'disable_lighting', lambda _self: (events.append(('base', 'disable')), disable_result)[1], create=True):
-            self.assertIs(keyboard.disable_lighting(), disable_result)
-        with unittest.mock.patch.object(_MacroKeyboard, 'restore_lighting', lambda _self: (events.append(('base', 'restore')), restore_result)[1], create=True):
-            self.assertIs(keyboard.restore_lighting(), restore_result)
+        keyboard.suspend_device()
+        self.assertTrue(keyboard.resume_device())
+        self.assertTrue(keyboard.disable_lighting())
+        self.assertTrue(keyboard.restore_lighting())
 
         self.assertEqual(events, [
-            ('pause', 'device'), ('base', 'suspend'),
-            ('base', 'resume'), ('resume', 'device'),
-            ('pause', 'lighting'), ('base', 'disable'),
-            ('base', 'restore'), ('resume', 'lighting'),
+            ('pause', 'lighting'), ('dark',),
+            ('pause', 'lighting'), ('mode', 3, 0), ('effects',), ('brightness',), ('resume', 'lighting'),
+            ('pause', 'lighting'), ('dark',),
+            ('pause', 'lighting'), ('mode', 3, 0), ('effects',), ('brightness',), ('resume', 'lighting'),
         ])
 
     def test_other_ripple_devices_pause_for_suspend_and_lock(self):
         events = []
         keyboard = self.make_keyboard(events, custom_once=False)
 
-        with unittest.mock.patch.object(_MacroKeyboard, 'suspend_device', lambda _self: events.append(('base', 'suspend'))):
-            keyboard.suspend_device()
-        with unittest.mock.patch.object(_MacroKeyboard, 'resume_device', lambda _self: events.append(('base', 'resume'))):
-            keyboard.resume_device()
-        with unittest.mock.patch.object(_MacroKeyboard, 'disable_lighting', lambda _self: events.append(('base', 'disable')), create=True):
-            keyboard.disable_lighting()
-        with unittest.mock.patch.object(_MacroKeyboard, 'restore_lighting', lambda _self: events.append(('base', 'restore')), create=True):
-            keyboard.restore_lighting()
+        keyboard.suspend_device()
+        keyboard.resume_device()
+        keyboard.disable_lighting()
+        keyboard.restore_lighting()
 
         self.assertEqual(events, [
-            ('pause', 'device'), ('base', 'suspend'),
-            ('base', 'resume'), ('resume', 'device'),
-            ('pause', 'lighting'), ('base', 'disable'),
-            ('base', 'restore'), ('resume', 'lighting'),
+            ('pause', 'lighting'), ('dark',),
+            ('pause', 'lighting'), ('mode', 3, 0), ('effects',), ('brightness',), ('resume', 'lighting'),
+            ('pause', 'lighting'), ('dark',),
+            ('pause', 'lighting'), ('mode', 3, 0), ('effects',), ('brightness',), ('resume', 'lighting'),
         ])
 
-    def test_workers_resume_after_restore_error(self):
+    def test_workers_remain_paused_after_restore_error(self):
         events = []
         keyboard = self.make_keyboard(events)
+        keyboard.suspend_device()
 
-        def fail(_self):
+        def fail(_zones):
             raise OSError('reset')
 
-        with unittest.mock.patch.object(_MacroKeyboard, 'resume_device', fail):
-            with self.assertRaises(OSError):
-                keyboard.resume_device()
-        with unittest.mock.patch.object(_MacroKeyboard, 'restore_lighting', fail, create=True):
-            with self.assertRaises(OSError):
-                keyboard.restore_lighting()
+        keyboard._restore_effects = fail
+        self.assertFalse(keyboard.resume_device())
+        self.assertFalse(keyboard.restore_lighting())
 
-        self.assertEqual(events, [
-            ('resume', 'device'),
-            ('resume', 'lighting'),
-        ])
+        keyboard.ripple_manager.resume.assert_not_called()
+        self.assertEqual(events.count(('brightness',)), 2)
+        self.assertIsNone(keyboard._lighting_state_applied)
 
 
 class FakeEffectThread(object):

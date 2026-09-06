@@ -67,10 +67,12 @@ class _RippleKeyboard(_MacroKeyboard):
                 self.key_manager.EVENT_MAP.update(self.matrix_layout.event_mapping)
 
         self.ripple_manager = _RippleManager(self, self._device_number)
+        if self._lighting_state != 'software':
+            self._pause_lighting()
         self._restore_software_effect()
 
     def _restore_software_effect(self):
-        if not self.config.getboolean('Startup', 'restore_persistence'):
+        if self._lighting_state != 'software' or not self.config.getboolean('Startup', 'restore_persistence'):
             return
 
         # we need to set the effect to ripple (if needed) after the ripple manager has started
@@ -98,37 +100,35 @@ class _RippleKeyboard(_MacroKeyboard):
     def _invalidate_custom_frame_effect(self):
         self._custom_frame_effect_selected = False
 
-    def suspend_device(self):
-        self.ripple_manager.suspend('device')
-        return super().suspend_device()
-
-    def resume_device(self):
-        try:
-            return super().resume_device()
-        finally:
-            self.ripple_manager.resume('device')
-
-    def disable_lighting(self):
+    def _pause_lighting(self):
         self.ripple_manager.suspend('lighting')
 
-        disable_lighting = getattr(super(), 'disable_lighting', None)
-        if disable_lighting is None:
-            return super().suspend_device()
-        return disable_lighting()
+    def _resume_lighting(self):
+        state = self.zone['backlight']
+        if state['effect'] == 'wheel' and self.SOFTWARE_WHEEL:
+            self.ripple_manager.notify(('effect', self, 'backlight', 'setWheel', state['wave_dir']))
+        elif state['effect'] in ('ripple', 'rippleRandomColour'):
+            colors = state['colors'][:3] if state['effect'] == 'ripple' else (None, None, None)
+            self.ripple_manager.notify(('effect', self, 'backlight', 'setRipple', *colors, self.ripple_manager._ripple_thread._refresh_rate))
+        else:
+            self.ripple_manager.notify(('effect', self, 'backlight', 'set' + self.capitalize_first_char(state['effect'])))
+        self.ripple_manager.resume('lighting')
 
-    def restore_lighting(self):
-        try:
-            restore_lighting = getattr(super(), 'restore_lighting', None)
-            if restore_lighting is None:
-                return super().resume_device()
-            return restore_lighting()
-        finally:
-            self.ripple_manager.resume('lighting')
+    def _restore_hardware_effects(self, zones):
+        software_effect = self.zone['backlight']['effect'] in ('ripple', 'rippleRandomColour')
+        software_effect |= self.SOFTWARE_WHEEL and self.zone['backlight']['effect'] == 'wheel'
+        if 'backlight' in zones and software_effect:
+            spectrum = getattr(self, 'setSpectrum', None)
+            if spectrum is not None:
+                spectrum()
+            else:
+                self.setStatic(*self.zone['backlight']['colors'][:3])
+            zones = set(zones) - {'backlight'}
+        super()._restore_hardware_effects(zones)
 
     def _close(self):
-        super()._close()
-
         self.ripple_manager.close()
+        super()._close()
 
 
 class RazerNostromo(_RazerDeviceBrightnessSuspend):
@@ -1886,6 +1886,7 @@ class RazerBladeProEarly2020(_RippleKeyboard):
     MATRIX_LAYOUTS = BLADE_PRO_EARLY_2020_LAYOUTS
     SOFTWARE_WHEEL = True
     CUSTOM_FRAME_EFFECT_ONCE = True
+    LID_LIGHTING = True
     METHODS = ['get_device_type_keyboard', 'get_logo_active', 'set_logo_active', 'set_wave_effect', 'set_wheel_effect', 'set_static_effect', 'set_spectrum_effect',
                'set_reactive_effect', 'set_none_effect', 'set_custom_effect', 'set_key_row',
                'set_ripple_effect', 'set_ripple_effect_random_colour']

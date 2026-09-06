@@ -1,11 +1,14 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 
 """
-Screensaver class which watches dbus signals to see if screensaver is active
+Screensaver state on the session bus
 """
 import logging
+from functools import partial
+
 import dbus
 import dbus.exceptions
+
 
 DBUS_SCREENSAVER_INTERFACES = (
     'org.cinnamon.ScreenSaver',
@@ -17,102 +20,90 @@ DBUS_SCREENSAVER_INTERFACES = (
 
 
 class ScreensaverMonitor(object):
-    """
-    Simple class for monitoring signals on the Session Bus
-    """
+    """Monitor lock/screensaver state independently of display power."""
 
     def __init__(self, parent):
         self._logger = logging.getLogger('razer.screensaver')
         self._logger.info("Initialising DBus Screensaver Monitor")
-
         self._parent = parent
         self._monitoring = True
         self._active = None
-        self._lighting_disabled = False
-        self._lighting_retry = False
-
-        # Get session bus
+        self._states = {}
+        self._matches = []
+        self._closed = False
         self._bus = dbus.SessionBus()
-        # Loop through and monitor the signals
-        for screensaver_interface in DBUS_SCREENSAVER_INTERFACES:
-            self._bus.add_signal_receiver(self.signal_callback, dbus_interface=screensaver_interface, signal_name='ActiveChanged')
+        for interface in DBUS_SCREENSAVER_INTERFACES:
+            self._matches.append(self._bus.add_signal_receiver(
+                partial(self.signal_callback, interface=interface),
+                dbus_interface=interface,
+                signal_name='ActiveChanged',
+                bus_name=interface,
+            ))
+            self._matches.append(self._bus.add_signal_receiver(
+                self._owner_changed,
+                dbus_interface='org.freedesktop.DBus',
+                signal_name='NameOwnerChanged',
+                bus_name='org.freedesktop.DBus',
+                arg0=interface,
+            ))
+        self.refresh(notify=False)
+
+    @property
+    def active(self):
+        return self._active
 
     @property
     def monitoring(self):
-        """
-        Monitoring property, if true then lighting will follow screensaver state.
-
-        :return: If monitoring
-        :rtype: bool
-        """
         return self._monitoring
 
     @monitoring.setter
     def monitoring(self, value):
-        """
-        Monitoring property setter.
+        self._monitoring = bool(value)
+        self._parent.apply_lighting_policy()
 
-        :param value: If monitoring
-        :type: bool
-        """
-        value = bool(value)
-        self._monitoring = value
-        if self._monitoring and self._active:
-            self.disable_lighting()
-        elif not self._monitoring:
-            self.restore_lighting()
-
-    def disable_lighting(self, force=False):
-        """
-        Turn off device lighting
-        """
-        if self._lighting_disabled and not self._lighting_retry and not force:
-            return True
-
-        self._logger.debug("Received screensaver active signal")
-        self._lighting_disabled = True
-        self._lighting_retry = True
-        successful = self._parent.disable_lighting()
-        self._lighting_retry = successful is False
-        return not self._lighting_retry
-
-    def restore_lighting(self):
-        """
-        Restore device lighting
-        """
-        if not self._lighting_disabled:
-            return True
-
-        self._logger.debug("Received screensaver inactive signal")
-        self._lighting_retry = True
-        successful = self._parent.restore_lighting()
-        if successful is not False:
-            self._lighting_disabled = False
-            self._lighting_retry = False
-        return not self._lighting_retry
-
-    def reapply_lighting(self):
-        """
-        Keep lighting off after a device resumed.
-        """
-        if self.monitoring and self._active and self._lighting_disabled:
-            return self.disable_lighting(force=True)
-        return self.restore_lighting()
-
-    def signal_callback(self, active):
-        """
-        Called by DBus when a signal is found
-
-        :param active: If the screensaver is active
-        :type active: dbus.Boolean
-        """
-        active = bool(active)
-        self._active = active
-        if not self.monitoring:
-            self.restore_lighting()
+    def refresh(self, notify=True):
+        if self._closed:
             return
+        for interface in DBUS_SCREENSAVER_INTERFACES:
+            try:
+                present = self._bus.name_has_owner(interface)
+            except dbus.exceptions.DBusException:
+                continue
+            if not present:
+                self._states.pop(interface, None)
+                continue
+            paths = ['/' + interface.replace('.', '/')]
+            if interface == 'org.freedesktop.ScreenSaver':
+                paths.append('/ScreenSaver')
+            for path in paths:
+                try:
+                    proxy = self._bus.get_object(interface, path, introspect=False)
+                    active = proxy.GetActive(dbus_interface=interface, timeout=1.0)
+                except dbus.exceptions.DBusException:
+                    continue
+                self._states[interface] = bool(active)
+                break
+        active = any(self._states.values()) if self._states else None
+        changed = self._active != active
+        self._active = active
+        if notify and changed:
+            self._parent.apply_lighting_policy()
 
-        if active:
-            self.disable_lighting()
-        else:
-            self.restore_lighting()
+    def _owner_changed(self, name, old_owner, new_owner):
+        if self._closed:
+            return
+        self._states.pop(name, None)
+        self.refresh()
+
+    def signal_callback(self, active, interface='org.freedesktop.ScreenSaver'):
+        if self._closed:
+            return
+        self._states[interface] = bool(active)
+        self._active = any(self._states.values())
+        self._parent.apply_lighting_policy()
+
+    def close(self):
+        self._closed = True
+        for match in self._matches:
+            match.remove()
+        self._matches.clear()

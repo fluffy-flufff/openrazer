@@ -28,6 +28,7 @@ import openrazer_daemon.hardware
 from openrazer_daemon.dbus_services.service import DBusService
 from openrazer_daemon.device import DeviceCollection
 from openrazer_daemon.misc.screensaver_monitor import ScreensaverMonitor
+from openrazer_daemon.misc.lighting_power_monitor import LightingPowerMonitor
 from openrazer_daemon.misc.system_sleep_monitor import SystemSleepMonitor
 from openrazer_daemon.misc.autosave_persistence import PersistenceAutoSave
 
@@ -118,8 +119,10 @@ class RazerDaemon(DBusService):
         self.logger.info("Initialising Daemon (v%s). Pid: %d", __version__, os.getpid())
         self._init_screensaver_monitor()
         self._init_system_sleep_monitor()
+        self._init_lighting_power_monitor()
 
         self._load_devices(first_run=True)
+        self.apply_lighting_policy()
 
         # Add DBus methods
         methods = {
@@ -211,6 +214,7 @@ class RazerDaemon(DBusService):
         self._udev_observer = MonitorObserver(udev_monitor, callback=self._udev_input_event, name='device-monitor')
 
     def _init_screensaver_monitor(self):
+        self._screensaver_monitor = None
         try:
             self._screensaver_monitor = ScreensaverMonitor(self)
             self._screensaver_monitor.monitoring = self._config.getboolean('Startup', 'devices_off_on_screensaver')
@@ -223,6 +227,13 @@ class RazerDaemon(DBusService):
             self._system_sleep_monitor = SystemSleepMonitor(self)
         except dbus.exceptions.DBusException as e:
             self.logger.error("Failed to init SystemSleepMonitor: {}".format(e))
+
+    def _init_lighting_power_monitor(self):
+        self._lighting_power_monitor = None
+        try:
+            self._lighting_power_monitor = LightingPowerMonitor(self)
+        except dbus.exceptions.DBusException as e:
+            self.logger.error("Failed to init LightingPowerMonitor: {}".format(e))
 
     def _init_autosave_persistence(self):
         if not self._persistence:
@@ -294,6 +305,7 @@ class RazerDaemon(DBusService):
         self._config['Startup'] = {
             'sync_effects_enabled': True,
             'devices_off_on_screensaver': True,
+            'devices_off_on_display': True,
             'restore_persistence': True,
             'persistence_dual_boot_quirk': False,
         }
@@ -399,14 +411,40 @@ class RazerDaemon(DBusService):
         """
         Resume all devices
         """
+        for monitor in (self._screensaver_monitor, self._lighting_power_monitor):
+            if monitor is not None:
+                monitor.refresh()
+        self.apply_lighting_policy()
+        return self._run_device_action('resume_device')
+
+    def _get_lighting_state(self, device):
+        screensaver = self._screensaver_monitor
+        power = getattr(self, '_lighting_power_monitor', None)
+        locked = screensaver is not None and screensaver.active is True
+        screen_off = locked and screensaver.monitoring
+        display_off = (power is not None and power.display_off is True and
+                       self._config.getboolean('Startup', 'devices_off_on_display'))
+        lid_closed = power is not None and power.lid_closed and device.LID_LIGHTING
+        if screen_off or display_off or lid_closed:
+            return 'off'
+        if locked or (power is not None and power.session_active is False):
+            return 'hardware'
+        return 'software'
+
+    def apply_lighting_policy(self, force=False):
         successful = True
-        try:
-            successful = self._run_device_action('resume_device')
-        finally:
-            screensaver_monitor = getattr(self, '_screensaver_monitor', None)
-            if screensaver_monitor is not None and screensaver_monitor.reapply_lighting() is False:
+        for device in list(self._razer_devices):
+            try:
+                if device.dbus.set_lighting_state(self._get_lighting_state(device.dbus), force=force) is False:
+                    successful = False
+            except OSError as error:
                 successful = False
+                self.logger.warning("Failed to apply lighting state for %s: %s", device.serial, error)
         return successful
+
+    def _apply_lighting_policy_idle(self):
+        self.apply_lighting_policy()
+        return False
 
     def disable_lighting(self):
         """
@@ -534,7 +572,8 @@ class RazerDaemon(DBusService):
                                                 persistence=self._persistence, testing=self._test_dir is not None,
                                                 additional_interfaces=sorted(additional_interfaces),
                                                 additional_methods=[],
-                                                unknown_serial_counter=self._unknown_serial_counter)
+                                                unknown_serial_counter=self._unknown_serial_counter,
+                                                lighting_state=self._get_lighting_state(device_class))
 
                     # Wireless devices sometimes don't listen
                     count = 0
@@ -573,7 +612,8 @@ class RazerDaemon(DBusService):
                 razer_device = device_class(device_path=sys_path, device_number=device_number, config=self._config,
                                             persistence=self._persistence, testing=self._test_dir is not None,
                                             additional_interfaces=None, additional_methods=[],
-                                            unknown_serial_counter=self._unknown_serial_counter)
+                                            unknown_serial_counter=self._unknown_serial_counter,
+                                            lighting_state=self._get_lighting_state(device_class))
 
                 # Its a udev event so currently the device hasn't been chmodded yet
                 time.sleep(0.2)
@@ -584,6 +624,7 @@ class RazerDaemon(DBusService):
                 if len(device_serial) > 0:
                     # Add Device
                     self._razer_devices.add(sys_name, device_serial, razer_device)
+                    GLib.idle_add(self._apply_lighting_policy_idle)
                     self.device_added()
                 else:
                     logging.warning("Could not get serial for device {0}. Skipping".format(sys_name))
@@ -680,9 +721,9 @@ class RazerDaemon(DBusService):
         else:
             self.logger.info('Stopping daemon on signal %d', signum)
 
-        screensaver_monitor = getattr(self, '_screensaver_monitor', None)
-        if screensaver_monitor is not None:
-            screensaver_monitor.restore_lighting()
+        for monitor in (self._screensaver_monitor, self._lighting_power_monitor):
+            if monitor is not None:
+                monitor.close()
 
         system_sleep_monitor = getattr(self, '_system_sleep_monitor', None)
         if system_sleep_monitor is not None:
